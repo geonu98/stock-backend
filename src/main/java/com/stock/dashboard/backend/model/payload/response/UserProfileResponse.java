@@ -14,6 +14,7 @@ public class UserProfileResponse {
     private String nickname;
     private String name;
     private Integer age;
+    private String phoneNumber;
     private Boolean active;
     private Boolean emailVerified;
     private List<String> roles;
@@ -27,6 +28,7 @@ public class UserProfileResponse {
         this.nickname = user.getNickname();
         this.name = user.getName();
         this.age = user.getAge();
+        this.phoneNumber = user.getPhoneNumber();
         this.active = user.getActive();
         this.emailVerified = user.getIsEmailVerified();
         this.roles = user.getRoles().stream()

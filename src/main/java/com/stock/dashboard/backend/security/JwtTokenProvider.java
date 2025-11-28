@@ -45,19 +45,39 @@ public class JwtTokenProvider {
                 .compact();
     }
 
-    /**
-     * userId로부터 JWT 토큰 생성
+
+    /*
+    이메일 인증용
      */
-    public String generateTokenFromUserId(Long userId) {
-        Instant expiryDate = Instant.now().plusMillis(jwtExpirationInMs);
+    public String generateEmailVerificationToken(Long userId, String email) {
+
+        long emailVerificationExpirationMs = 15 * 60 * 1000; // 15분
+
+        Instant expiryDate = Instant.now().plusMillis(emailVerificationExpirationMs);
 
         return Jwts.builder()
-                .setSubject(Long.toString(userId))
+                .setSubject(String.valueOf(userId))            // 유저 ID
+                .claim("email", email)                         // 이메일
+                .claim("purpose", "email_verification")        // 목적 구분
                 .setIssuedAt(Date.from(Instant.now()))
                 .setExpiration(Date.from(expiryDate))
                 .signWith(key, SignatureAlgorithm.HS512)
                 .compact();
     }
+
+//    /**
+//     * userId로부터 JWT 토큰 생성
+//     */
+//    public String generateTokenFromUserId(Long userId) {
+//        Instant expiryDate = Instant.now().plusMillis(jwtExpirationInMs);
+//
+//        return Jwts.builder()
+//                .setSubject(Long.toString(userId))
+//                .setIssuedAt(Date.from(Instant.now()))
+//                .setExpiration(Date.from(expiryDate))
+//                .signWith(key, SignatureAlgorithm.HS512)
+//                .compact();
+//    }
 
     /**
      * JWT 토큰에서 userId 추출
