@@ -7,7 +7,7 @@ import lombok.*;
 @ToString
 @NoArgsConstructor
 @AllArgsConstructor
-public class EmailRequest {
+public class SmtpTestEmailRequest {
 
     private String mailTo;
     private String mailType;

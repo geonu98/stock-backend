@@ -47,7 +47,7 @@ public class CustomUserDetails implements UserDetails {
     public boolean isCredentialsNonExpired() { return true; }
 
     @Override
-    public boolean isEnabled() { return user.getIsEmailVerified(); }
+    public boolean isEnabled() { return user.getEmailVerified(); }
 
     public Long getId() {
         return user.getId();

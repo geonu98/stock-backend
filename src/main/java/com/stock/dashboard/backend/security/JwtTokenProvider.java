@@ -49,21 +49,27 @@ public class JwtTokenProvider {
     /*
     이메일 인증용
      */
-    public String generateEmailVerificationToken(Long userId, String email) {
-
-        long emailVerificationExpirationMs = 15 * 60 * 1000; // 15분
-
-        Instant expiryDate = Instant.now().plusMillis(emailVerificationExpirationMs);
-
-        return Jwts.builder()
-                .setSubject(String.valueOf(userId))            // 유저 ID
-                .claim("email", email)                         // 이메일
-                .claim("purpose", "email_verification")        // 목적 구분
-                .setIssuedAt(Date.from(Instant.now()))
-                .setExpiration(Date.from(expiryDate))
-                .signWith(key, SignatureAlgorithm.HS512)
-                .compact();
+    public String generateEmailVerificationToken(User user) {
+        Long userId = user.getId();
+        String email = user.getEmail();
+     return  createEmailVerificationToken(userId, email);
     }
+
+        // 실제 JWT 생성은 여기서 처리 → 내부 전용 메서드로 분리
+        private String createEmailVerificationToken(Long userId, String email) {
+
+            long emailVerificationExpirationMs = 15 * 60 * 1000; // 15분
+            Instant expiryDate = Instant.now().plusMillis(emailVerificationExpirationMs);
+
+            return Jwts.builder()
+                    .setSubject(String.valueOf(userId))
+                    .claim("email", email)
+                    .claim("purpose", "email_verification")
+                    .setIssuedAt(Date.from(Instant.now()))
+                    .setExpiration(Date.from(expiryDate))
+                    .signWith(key, SignatureAlgorithm.HS512)
+                    .compact();
+        }
 
 //    /**
 //     * userId로부터 JWT 토큰 생성
@@ -114,5 +120,14 @@ public class JwtTokenProvider {
 
     public Long getJwtExpirationInMs() {
         return jwtExpirationInMs;
+    }
+
+    public Claims getAllClaimsFromToken(String token) {
+
+        return Jwts.parserBuilder()
+                .setSigningKey(key)
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
     }
 }

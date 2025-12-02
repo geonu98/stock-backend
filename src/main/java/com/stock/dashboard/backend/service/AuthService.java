@@ -12,6 +12,7 @@ import com.stock.dashboard.backend.repository.UserRepository;
 import com.stock.dashboard.backend.security.JwtTokenProvider;
 import com.stock.dashboard.backend.security.JwtTokenValidator;
 import com.stock.dashboard.backend.security.model.CustomUserDetails;
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,7 +39,8 @@ public class AuthService {
     private final JwtTokenValidator jwtTokenValidator;
     private final LoggedOutJwtTokenCache logoutTokenCache;
     private final RefreshTokenService refreshTokenService;
-    private final UserDeviceService userDeviceService; //
+    private final UserDeviceService userDeviceService;
+    private final EmailService emailService;
 
 
     /**
@@ -49,7 +51,7 @@ public class AuthService {
     public Optional<Authentication> authenticateUser(LoginRequest loginRequest) {
         log.info("[AuthService] Authenticating user: {}", loginRequest.getEmail());
 
-        // 1️⃣ DB에서 사용자 존재 확인
+        // 1 DB에서 사용자 존재 확인
         Optional<User> optionalUser = userRepository.findByEmail(loginRequest.getEmail());
         if (optionalUser.isEmpty()) {
             log.warn("[AuthService] User NOT found in DB: {}", loginRequest.getEmail());
@@ -60,22 +62,22 @@ public class AuthService {
 
         User user = optionalUser.get();
 
-        // 2️⃣ DB 비밀번호와 입력 비밀번호 비교 로그 (디버깅용)
+        // 2 DB 비밀번호와 입력 비밀번호 비교 로그 (디버깅용)
         log.info("[AuthService DEBUG] DB stored password: {}", user.getPassword());
         log.info("[AuthService DEBUG] Raw password from request: {}", loginRequest.getPassword());
         boolean matches = passwordEncoder.matches(loginRequest.getPassword(), user.getPassword());
         log.info("[AuthService DEBUG] Does raw password match DB password? {}", matches);
 
-        // 3️⃣ 비밀번호 확인
+        // 3 비밀번호 확인
         if (!matches) {
             log.warn("[AuthService] Password mismatch for user: {}", loginRequest.getEmail());
-            // ❌ 로그인 실패 시 BadCredentialsException 발생
+            //  로그인 실패 시 BadCredentialsException 발생
             throw new BadCredentialsException("Invalid password");
         } else {
             log.info("[AuthService] Password matched for user: {}", loginRequest.getEmail());
         }
 
-        // 4️⃣ Authentication 객체 생성 (Spring Security용)
+        // 4 Authentication 객체 생성 (Spring Security용)
         CustomUserDetails userDetails = new CustomUserDetails(user);
         Authentication authentication = new UsernamePasswordAuthenticationToken(
                 userDetails,
@@ -85,7 +87,7 @@ public class AuthService {
 
         log.info("[AuthService] Authentication object created for user: {}", loginRequest.getEmail());
 
-        // 5️⃣ Optional로 Authentication 객체 반환
+        // 5 Optional로 Authentication 객체 반환
         return Optional.of(authentication);
     }
 
@@ -105,14 +107,14 @@ public class AuthService {
         User user = userRepository.findById(userDetails.getId())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        // ✅ 변경된 코드: UserDeviceService 로 디바이스 등록/갱신 처리
+        //  변경된 코드: UserDeviceService 로 디바이스 등록/갱신 처리
         UserDevice userDevice = userDeviceService.createOrUpdateDeviceInfo(
                 user,
                 loginRequest.getDeviceInfo().getDeviceId(),
                 loginRequest.getDeviceInfo().getDeviceType()
         );
 
-        // ✅ 기존 토큰이 있는지 먼저 조회
+        //  기존 토큰이 있는지 먼저 조회
         Optional<RefreshToken> existingTokenOpt = refreshTokenService.findByUserDevice(userDevice);
 
         RefreshToken refreshToken;
@@ -131,9 +133,9 @@ public class AuthService {
                     userDevice.getId(), refreshToken.getToken());
         }
 
-        refreshTokenService.save(refreshToken); // ✅ save() 명확히 호출 (upsert용)
+        refreshTokenService.save(refreshToken); //  save() 명확히 호출 (upsert용)
 
-        // ✅ Access + Refresh 토큰을 DTO 형태로 반환
+        //  Access + Refresh 토큰을 DTO 형태로 반환
         return new JwtAuthenticationResponse(
                 accessToken,
                 refreshToken.getToken(),
@@ -198,7 +200,7 @@ public class AuthService {
         UserDevice userDevice = refreshToken.getUserDevice();
         User user = userDevice.getUser();
 
-        // ✅ 새로운 Access Token 생성
+        //  새로운 Access Token 생성
         CustomUserDetails userDetails = new CustomUserDetails(user);
         String newAccessToken = jwtTokenProvider.generateToken(userDetails);
 
@@ -212,5 +214,45 @@ public class AuthService {
                 false,
                 user.getId()
         );
+    }
+
+    /**
+     * 이메일 재전송
+     */
+    public void resendVerificationEmail(String email) {
+
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("이메일이 존재 하지 않음"));
+        if (user.isEnabled()){
+            throw new RuntimeException("이미 인증 완료된 이메일 입니다");
+        }
+
+       String token  =  jwtTokenProvider.generateEmailVerificationToken(user);
+        emailService.sendVerificationEmail(user , token);
+
+    }
+
+    public void verifyEmail(String token) {
+        Long userId = jwtTokenProvider.getUserIdFromJWT(token);
+
+        User user = userRepository.findById(userId).orElseThrow(() ->new RuntimeException("등록된 사용자가 아닙니다"));
+
+        if (user.isEnabled()){
+            throw new RuntimeException("이미 인증 완료된 사용자 입니다");
+
+        }
+        // 토큰 목적 확인 (email_verification인지)
+        Claims claims = jwtTokenProvider.getAllClaimsFromToken(token);
+        String purpose = claims.get("purpose", String.class);
+
+
+        if (!"email_verification".equals(purpose)) {
+            throw new RuntimeException("유효하지 않은 이메일 인증 토큰입니다.");
+        }
+
+        // 5) 이메일 인증 완료 처리
+        user.verifyEmail();
+        userRepository.save(user);
     }
 }

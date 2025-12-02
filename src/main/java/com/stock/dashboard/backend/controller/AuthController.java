@@ -1,10 +1,12 @@
 package com.stock.dashboard.backend.controller;
 
-import com.stock.dashboard.backend.model.payload.request.LoginRequest;
-import com.stock.dashboard.backend.model.payload.request.TokenRefreshRequest;
+import com.stock.dashboard.backend.model.User;
+import com.stock.dashboard.backend.model.payload.request.*;
 import com.stock.dashboard.backend.model.payload.response.JwtAuthenticationResponse;
 import com.stock.dashboard.backend.security.model.CustomUserDetails;
 import com.stock.dashboard.backend.service.AuthService;
+import com.stock.dashboard.backend.service.EmailService;
+import com.stock.dashboard.backend.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +22,17 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
     private final AuthService authService;
+    private final UserService userService;
+
+
+    @PostMapping("/signup")
+    public ResponseEntity<?> regiserUser(@RequestBody SignUpRequest request) {
+        log.info("Signup request received: email={}", request.getEmail());
+       User savedUser = userService.registerUser(request); //이메일 인증 성공 페이지에서 사용자 정보 필요할 수도 ?
+
+
+        return ResponseEntity.ok("회원가입 완료");
+    }
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest loginRequest) {
@@ -62,6 +75,20 @@ public class AuthController {
 
 
         return ResponseEntity.ok(response);
+    }
+
+    //이메일 재전송
+    @PostMapping("/resend-verification-email")
+    public ResponseEntity<?> resendVerificationEmail(@RequestBody EmailResendRequest request) {
+    authService.resendVerificationEmail(request.getEmail());
+        return ResponseEntity.ok("이메일 재전송 완료");
+    }
+
+    //이메일 인증 확인
+    @GetMapping("/verify-email")
+    public ResponseEntity<?> verifyEmail(@RequestParam("token") String token) {
+        authService.verifyEmail(token);
+        return ResponseEntity.ok("이메일 인증 완료");
     }
 
 }

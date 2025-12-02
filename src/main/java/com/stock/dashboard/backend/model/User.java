@@ -1,11 +1,9 @@
 package com.stock.dashboard.backend.model;
 
-import com.stock.dashboard.backend.model.Role;
 import com.stock.dashboard.backend.model.audit.DateAudit;
 import com.stock.dashboard.backend.model.payload.request.UpdateUserRequest;
 import com.stock.dashboard.backend.model.vo.InterestsVO;
 import jakarta.persistence.*;
-import lombok.Data;
 import lombok.Getter;
 import lombok.ToString;
 import org.hibernate.annotations.NaturalId;
@@ -56,7 +54,7 @@ public class User extends DateAudit implements UserDetails {
     private Boolean active;
 
     @Column(name = "IS_EMAIL_VERIFIED", nullable = false)
-    private Boolean isEmailVerified;
+    private Boolean emailVerified;
 
     @Column(name = "PROVIDER")
     private String provider;  // local/kakao/google/ 등등
@@ -102,7 +100,7 @@ public class User extends DateAudit implements UserDetails {
         this.phoneNumber = phoneNumber;
 
         this.active = true;            // 기본 활성화
-        this.isEmailVerified = emailVerified;  // 기본값: 이메일 인증되지 않음
+        this.emailVerified = emailVerified;  // 기본값: 이메일 인증되지 않음
         this.provider = "local";       // 임시, 나중에 카카오/구글 들어오면 변경
     }
 
@@ -115,7 +113,7 @@ public class User extends DateAudit implements UserDetails {
         this.nickname = user.getNickname();
         this.password = user.getPassword();
         this.active = user.getActive();
-        this.isEmailVerified = user.getIsEmailVerified();
+        this.emailVerified = user.getEmailVerified();
         this.roles = user.getRoles();
     }
 
@@ -137,7 +135,7 @@ public class User extends DateAudit implements UserDetails {
     public boolean isCredentialsNonExpired() { return true; }
 
     @Override
-    public boolean isEnabled() { return isEmailVerified; }
+    public boolean isEnabled() { return emailVerified; }
 
 
 
@@ -174,7 +172,11 @@ public class User extends DateAudit implements UserDetails {
         if (req.getPhoneNumber() != null) this.phoneNumber = req.getPhoneNumber();
     }
 
+//이메일 인증 확인
+    public  void  verifyEmail(){
+        this.emailVerified = true;
 
+    }
 
 
     // 역할 추가/삭제 헬퍼

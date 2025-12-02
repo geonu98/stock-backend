@@ -30,7 +30,7 @@ public class UserProfileResponse {
         this.age = user.getAge();
         this.phoneNumber = user.getPhoneNumber();
         this.active = user.getActive();
-        this.emailVerified = user.getIsEmailVerified();
+        this.emailVerified = user.getEmailVerified();
         this.roles = user.getRoles().stream()
                 .map(role -> role.getRole().name())
                 .toList();

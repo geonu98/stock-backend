@@ -55,7 +55,7 @@ public class UserService {
 
 
         //  이메일 인증 토큰 생성
-        String token = jwtTokenProvider.generateEmailVerificationToken(savedUser.getId(), savedUser.getEmail());
+        String token = jwtTokenProvider.generateEmailVerificationToken(savedUser);
 
 
         //  인증 메일 발송

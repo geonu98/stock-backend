@@ -34,10 +34,36 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Value("${app.jwt.header.prefix}")
     private String tokenRequestHeaderPrefix;
 
-    // 공개 URL 설정
-    private static final List<String> PUBLIC_URLS = List.of(
-            "/api/auth", "/swagger", "/v3/api-docs", "/api-docs"
+    //  JWT 필터를 적용하지 않을 경로 (소셜 로그인 확장 포함)
+    private static final List<String> EXCLUDED_PATHS = List.of(
+            "/api/auth/",      // 회원가입, 로그인, 이메일 인증 등
+            "/oauth2/",        // OAuth2 인증 시작
+            "/login/oauth2/",  // 소셜 로그인 Redirect URI
+            "/swagger",
+            "/v3/api-docs",
+            "/api-docs"
     );
+
+    //  shouldNotFilter → true면 필터 자체를 실행하지 않음
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getServletPath();
+        String method = request.getMethod();
+
+        log.warn("[DEBUG] shouldNotFilter() method={} path={}", method, path);
+
+        // OPTIONS는 무조건 예외
+        if ("OPTIONS".equalsIgnoreCase(method)) {
+            log.warn("[DEBUG] → skip OPTIONS");
+            return true;
+        }
+
+        boolean skip = EXCLUDED_PATHS.stream().anyMatch(path::startsWith);
+        log.warn("[DEBUG] EXCLUDED? {} → {}", path, skip);
+
+        return skip;
+    }
+
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -45,42 +71,27 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
-        String path = request.getServletPath();
-        log.info("[JwtFilter] Incoming request path: {}", path);
-
-        // 공개 URL이면 필터 무시
-        for (String publicPath : PUBLIC_URLS) {
-            if (path.startsWith(publicPath)) {
-                log.info("[JwtFilter] Public URL, skipping authentication: {}", path);
-                filterChain.doFilter(request, response);
-                return;
-            }
-        }
+        String jwt = getJwtFromRequest(request);
+        log.info("[JwtFilter] Incoming JWT: {}", jwt);
 
         try {
-            String jwt = getJwtFromRequest(request);
-            log.info("[JwtFilter] Extracted JWT: {}", jwt);
-
             if (StringUtils.hasText(jwt) && jwtTokenValidator.validateToken(jwt)) {
-                log.info("[JwtFilter] Token is valid, extracting user ID...");
                 Long userId = jwtTokenProvider.getUserIdFromJWT(jwt);
-                log.info("[JwtFilter] User ID from token: {}", userId);
 
                 UserDetails userDetails = customUserDetailsService.loadUserById(userId);
-                log.info("[JwtFilter] Loaded user details: {}", userDetails.getUsername());
 
                 UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                        new UsernamePasswordAuthenticationToken(
+                                userDetails, null, userDetails.getAuthorities()
+                        );
+
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
-                log.info("[JwtFilter] Authentication set in SecurityContext");
-            } else {
-                log.warn("[JwtFilter] No valid JWT found in request headers");
             }
 
         } catch (Exception ex) {
-            log.error("[JwtFilter] Failed to set user authentication in security context: ", ex);
+            log.error("[JwtFilter] Failed to authenticate user:", ex);
         }
 
         filterChain.doFilter(request, response);
@@ -88,12 +99,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private String getJwtFromRequest(HttpServletRequest request) {
         String bearerToken = request.getHeader(tokenRequestHeader);
-        log.info("[JwtFilter] Authorization header: {}", bearerToken);
-
         if (StringUtils.hasText(bearerToken) && bearerToken.startsWith(tokenRequestHeaderPrefix)) {
-            String token = bearerToken.replace(tokenRequestHeaderPrefix, "").trim();
-            log.info("[JwtFilter] JWT after prefix removal: {}", token);
-            return token;
+            return bearerToken.replace(tokenRequestHeaderPrefix, "").trim();
         }
         return null;
     }
