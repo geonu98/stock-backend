@@ -37,11 +37,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     //  JWT 필터를 적용하지 않을 경로 (소셜 로그인 확장 포함)
     private static final List<String> EXCLUDED_PATHS = List.of(
             "/api/auth/",      // 회원가입, 로그인, 이메일 인증 등
+            "/api/auth/oauth",     //  명시적으로 추가 (가독성용)
+            "/api/auth/oauth",     //  명시적으로 추가
             "/oauth2/",        // OAuth2 인증 시작
             "/login/oauth2/",  // 소셜 로그인 Redirect URI
             "/swagger",
             "/v3/api-docs",
-            "/api-docs"
+            "/api-docs",
+            "/error"
     );
 
     //  shouldNotFilter → true면 필터 자체를 실행하지 않음

@@ -72,6 +72,7 @@ public class SecurityConfig {
                         ).permitAll()
                         // 인증 없이 접근 가능한 API
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/auth/oauth/**").permitAll()
 
                         // 자신의 정보 조회 등 인증 필요
                         .requestMatchers("/api/secure/**").authenticated()  // ✅ 추가 리프레시토큰 만료 테스트용
