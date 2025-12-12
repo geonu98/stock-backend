@@ -2,6 +2,7 @@ package com.stock.dashboard.backend.config;
 
 import com.stock.dashboard.backend.security.JwtAuthenticationEntryPoint;
 import com.stock.dashboard.backend.security.JwtAuthenticationFilter;
+import com.stock.dashboard.backend.security.EmailVerificationFilter;
 import com.stock.dashboard.backend.service.CustomUserDetailsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -28,6 +29,9 @@ public class SecurityConfig {
     private final JwtAuthenticationEntryPoint jwtEntryPoint;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
+    //   이메일 인증 검사 필터
+    private final EmailVerificationFilter emailVerificationFilter;
+
     // BCrypt PasswordEncoder Bean
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -44,12 +48,11 @@ public class SecurityConfig {
     @Bean
     public DaoAuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
-        authProvider.setUserDetailsService(userDetailsService); // CustomUserDetailsService 연결
-        authProvider.setPasswordEncoder(passwordEncoder());     // BCryptPasswordEncoder 연결
+        authProvider.setUserDetailsService(userDetailsService);
+        authProvider.setPasswordEncoder(passwordEncoder());
         return authProvider;
     }
 
-    // SecurityFilterChain 설정
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 
@@ -74,17 +77,20 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/auth/oauth/**").permitAll()
 
-                        // 자신의 정보 조회 등 인증 필요
-                        .requestMatchers("/api/secure/**").authenticated()  // ✅ 추가 리프레시토큰 만료 테스트용
+                        // 인증 이후 접근 가능한 API
+                        .requestMatchers("/api/secure/**").authenticated()
                         .requestMatchers("/api/user/me").authenticated()
-                        // 나머지 모든 요청 인증 필요
+
                         .anyRequest().authenticated()
                 )
-                // DaoAuthenticationProvider 적용
                 .authenticationProvider(authenticationProvider());
 
-        // JWT 필터 등록
+        //  JWT 인증 필터를 UsernamePasswordAuthenticationFilter 전에 실행
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
+        //  이메일 미인증 사용자의 기능 접근 제한 필터 추가
+        // → 반드시 JWT 인증 이후 실행해야 하므로 addFilterAfter 사용
+        http.addFilterAfter(emailVerificationFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }

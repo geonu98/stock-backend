@@ -213,11 +213,38 @@ public static User createSocialUser(
         if (req.getPhoneNumber() != null) this.phoneNumber = req.getPhoneNumber();
     }
 
+    public void updateNickname(String nickname) {
+        if (nickname != null && !nickname.isBlank()) {
+            this.nickname = nickname;
+        }
+    }
+
+    public void updateProfileImage(String profileImage) {
+        if (profileImage != null && !profileImage.isBlank()) {
+            this.profileImage = profileImage;
+        }
+    }
+
 //이메일 인증 확인
     public  void  verifyEmail(){
         this.emailVerified = true;
 
     }
+
+    public void connectSocial(String provider, String providerId) {
+
+        // 이미 같은 provider로 연결되어 있다면 아무것도 하지 않음
+        if (provider.equals(this.provider) && providerId.equals(this.providerId)) {
+            return;
+        }
+
+        // 다른 소셜 Provider로 이미 가입한 경우 처리 (확장 가능)
+        // 예: 기존에 이메일 인증한 로컬 계정 → 소셜 로그인 추가 연결
+
+        this.provider = provider;
+        this.providerId = providerId;
+    }
+
 
 
     // 역할 추가/삭제 헬퍼
