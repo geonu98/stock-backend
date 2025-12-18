@@ -28,4 +28,12 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * 닉네임 중복 체크를 위한 메서드입니다.
      */
     Boolean existsByNickname(String nickname);
+
+    /**
+     * 소셜로그인용 이메일 없는 경우 있어서 provider + providerId 로 조회해야 함.
+     * @param provider
+     * @param providerId
+     * @return
+     */
+    Optional<User> findByProviderAndProviderId(String provider, String providerId);
 }

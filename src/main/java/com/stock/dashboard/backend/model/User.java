@@ -116,6 +116,47 @@ public class User extends DateAudit implements UserDetails {
         this.emailVerified = user.getEmailVerified();
         this.roles = user.getRoles();
     }
+//(소셜 유저 정적 팩토리 메서드)
+public static User createSocialUser(
+        String email,
+        String nickname,
+        String provider,
+        String providerId,
+        String profileImage,
+        Role defaultRole
+) {
+    User user = new User();
+
+    // 1) 이메일이 없는 경우 → 임시 이메일 생성
+    if (email == null || email.isBlank()) {
+        email = provider.toLowerCase() + "-" + providerId + "@social.temp";
+    }
+    user.email = email;
+
+    // 2) username = provider + "_" + providerId (중복 절대 없음)
+    user.username = provider.toLowerCase() + "_" + providerId;
+
+    // 3) nickname null 허용
+    user.nickname = nickname;
+
+    // 4) 비밀번호는 소셜 로그인에서 사용되지 않음
+    user.password = "SOCIAL_LOGIN";
+
+    user.provider = provider;
+    user.providerId = providerId;
+
+    user.profileImage = profileImage;
+
+    user.active = true;
+    user.emailVerified = false; // 소셜 이메일 검증은 별도 처리
+
+    // 5) 역할 부여
+    user.roles = new HashSet<>();
+    user.roles.add(defaultRole);
+
+    return user;
+}
+
 
     // UserDetails 구현
     @Override
@@ -172,11 +213,38 @@ public class User extends DateAudit implements UserDetails {
         if (req.getPhoneNumber() != null) this.phoneNumber = req.getPhoneNumber();
     }
 
+    public void updateNickname(String nickname) {
+        if (nickname != null && !nickname.isBlank()) {
+            this.nickname = nickname;
+        }
+    }
+
+    public void updateProfileImage(String profileImage) {
+        if (profileImage != null && !profileImage.isBlank()) {
+            this.profileImage = profileImage;
+        }
+    }
+
 //이메일 인증 확인
     public  void  verifyEmail(){
         this.emailVerified = true;
 
     }
+
+    public void connectSocial(String provider, String providerId) {
+
+        // 이미 같은 provider로 연결되어 있다면 아무것도 하지 않음
+        if (provider.equals(this.provider) && providerId.equals(this.providerId)) {
+            return;
+        }
+
+        // 다른 소셜 Provider로 이미 가입한 경우 처리 (확장 가능)
+        // 예: 기존에 이메일 인증한 로컬 계정 → 소셜 로그인 추가 연결
+
+        this.provider = provider;
+        this.providerId = providerId;
+    }
+
 
 
     // 역할 추가/삭제 헬퍼
