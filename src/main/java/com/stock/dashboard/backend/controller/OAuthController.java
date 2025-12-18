@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.io.IOException;
 
@@ -19,6 +20,8 @@ public class OAuthController {
 
 
     private final SocialLoginService socialLoginService;
+    @Value("${app.frontend.url}")
+    private String frontendUrl;
 
 
     //카카오 로그인 URL 리다이렉트
@@ -41,14 +44,14 @@ public class OAuthController {
 
         // 2️⃣ 이메일 없는 경우 → 로그인 중단 + 이메일 입력 페이지로 리다이렉트
         if (userInfo.email() == null || userInfo.email().isBlank()) {
+            String redirectUrl = frontendUrl
+                    + "/email-required?provider=" + userInfo.provider()
+                    + "&providerId=" + userInfo.providerId();
+
             return ResponseEntity.status(HttpStatus.TEMPORARY_REDIRECT)
-                    .header("Location",
-                            "/email-required?provider=" + userInfo.provider() +
-                                    "&providerId=" + userInfo.providerId()
-                    )
+                    .header("Location", redirectUrl)
                     .build();
         }
-
         // 3️⃣ 이메일 있는 경우 → 기존 로그인 로직 수행
         return ResponseEntity.ok(
                 socialLoginService.loginWithSocialInfo(userInfo)
