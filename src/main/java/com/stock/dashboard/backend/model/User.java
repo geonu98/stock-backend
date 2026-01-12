@@ -28,7 +28,7 @@ public class User extends DateAudit implements UserDetails {
     @Column(name = "USER_ID")
     private Long id;
 
-    @NaturalId
+
     @Column(name = "EMAIL", unique = true)
     private String email;
 
@@ -176,7 +176,9 @@ public static User createSocialUser(
     public boolean isCredentialsNonExpired() { return true; }
 
     @Override
-    public boolean isEnabled() { return emailVerified; }
+    public boolean isEnabled() {
+        return active;   // 계정 정지/탈퇴만 판단
+    }
 
 
 
@@ -225,6 +227,17 @@ public static User createSocialUser(
         }
     }
 
+    //이메일 연결
+    public void connectEmail(String email) {
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Email cannot be blank");
+        }
+
+        this.email = email;
+        this.emailVerified = false; // 이메일 인증후 변경 할거임
+    }
+
+
 //이메일 인증 확인
     public  void  verifyEmail(){
         this.emailVerified = true;
@@ -245,7 +258,10 @@ public static User createSocialUser(
         this.providerId = providerId;
     }
 
-
+    // 임시 이메일 여부 판단 (카카오 등 이메일 미제공 케이스)
+    public boolean hasTempEmail() {
+        return this.email != null && this.email.endsWith("@social.temp");
+    }
 
     // 역할 추가/삭제 헬퍼
     public void addRole(Role role) {

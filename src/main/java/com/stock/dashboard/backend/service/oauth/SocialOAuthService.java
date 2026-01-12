@@ -9,4 +9,6 @@ public interface SocialOAuthService {
 
     // OAuth code로 User 정보 획득
     SocialUserInfo getUserInfo(String code);
+//로그인 URL 생성
+    String getAuthorizeUrl(String redirectUri);
  }

@@ -22,9 +22,11 @@ public class EmailVerificationFilter extends OncePerRequestFilter {
     private final UserRepository userRepository;
 
     private static final List<String> REQUIRE_VERIFIED_PATHS = List.of(
-            "/api/user",   // prefix 기준으로 바꿈 🔥
-            "/api/post",
-            "/api/order"
+            "/api/user",  // 마이페이지, 프로필 수정  prefix 기준으로 바꿈
+            "/api/post",  // 글 작성
+
+            "/api/order",  // 주문/결제
+            "/api/notification"
     );
 
     @Override
@@ -51,9 +53,15 @@ public class EmailVerificationFilter extends OncePerRequestFilter {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        if (!user.getEmailVerified()) {
+        if (!user.getEmailVerified() || user.hasTempEmail()) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.getWriter().write("EMAIL_VERIFICATION_REQUIRED");
+            response.setContentType("application/json");
+            response.getWriter().write("""
+    {
+      "code": "EMAIL_VERIFICATION_REQUIRED",
+      "message": "이메일 인증이 필요합니다."
+    }
+    """);
             return;
         }
 

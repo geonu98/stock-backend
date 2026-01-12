@@ -1,10 +1,10 @@
 package com.stock.dashboard.backend.model.audit;
 
-import com.stock.dashboard.backend.model.vo.DeviceType; // 🛑 경로 추정 및 수정
-import com.stock.dashboard.backend.validation.annotation.NullOrNotBlank; // 🛑 경로 수정
+import com.stock.dashboard.backend.model.vo.DeviceType; //  경로 추정 및 수정
+import com.stock.dashboard.backend.validation.annotation.NullOrNotBlank; //  경로 수정
 
-import jakarta.validation.constraints.NotBlank; // 🛑 Jakarta EE로 변경
-import jakarta.validation.constraints.NotNull; // 🛑 Jakarta EE로 변경
+import jakarta.validation.constraints.NotBlank; //  Jakarta EE로 변경
+import jakarta.validation.constraints.NotNull; //  Jakarta EE로 변경
 
 public class DeviceInfo {
 

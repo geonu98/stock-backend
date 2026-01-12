@@ -1,6 +1,6 @@
 package com.stock.dashboard.backend.security;
 
-import com.stock.dashboard.backend.model.User;
+
 import com.stock.dashboard.backend.security.model.CustomUserDetails;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -16,6 +16,25 @@ import javax.crypto.SecretKey;
 import java.time.Instant;
 import java.util.Date;
 
+/**
+ * JwtTokenProvider
+ *
+ * 책임
+ * - 로그인용 AccessToken(JWT) 생성
+ * - JWT 파싱 및 유효성 검증
+ *
+ * 🗑 제거 이력 (2026-01)
+ * - 이메일 인증용 JWT 토큰 발급 로직 제거
+ * - 사유:
+ *   1) 이메일 인증과 로그인 토큰의 책임 분리
+ *   2) URL에 JWT 노출 방지
+ *   3) EmailVerificationToken(DB) + verify → exchange 단일 플로우로 통합
+ *
+ * 현재 이메일 인증은 다음 흐름만 사용한다:
+ * - EmailVerificationToken (DB)
+ * - GET /api/auth/email/verify
+ * - POST /api/auth/email/exchange
+ */
 @Component
 @Slf4j
 public class JwtTokenProvider {
@@ -47,44 +66,9 @@ public class JwtTokenProvider {
     }
 
 
-    /*
-    이메일 인증용
-     */
-    public String generateEmailVerificationToken(User user) {
-        Long userId = user.getId();
-        String email = user.getEmail();
-     return  createEmailVerificationToken(userId, email);
-    }
 
-        // 실제 JWT 생성은 여기서 처리 → 내부 전용 메서드로 분리
-        private String createEmailVerificationToken(Long userId, String email) {
 
-            long emailVerificationExpirationMs = 15 * 60 * 1000; // 15분
-            Instant expiryDate = Instant.now().plusMillis(emailVerificationExpirationMs);
 
-            return Jwts.builder()
-                    .setSubject(String.valueOf(userId))
-                    .claim("email", email)
-                    .claim("purpose", "email_verification")
-                    .setIssuedAt(Date.from(Instant.now()))
-                    .setExpiration(Date.from(expiryDate))
-                    .signWith(key, SignatureAlgorithm.HS512)
-                    .compact();
-        }
-
-//    /**
-//     * userId로부터 JWT 토큰 생성
-//     */
-//    public String generateTokenFromUserId(Long userId) {
-//        Instant expiryDate = Instant.now().plusMillis(jwtExpirationInMs);
-//
-//        return Jwts.builder()
-//                .setSubject(Long.toString(userId))
-//                .setIssuedAt(Date.from(Instant.now()))
-//                .setExpiration(Date.from(expiryDate))
-//                .signWith(key, SignatureAlgorithm.HS512)
-//                .compact();
-//    }
 
     /**
      * JWT 토큰에서 userId 추출

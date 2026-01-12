@@ -71,7 +71,8 @@ public class SecurityConfig {
                                 "/swagger",
                                 "/api-docs",
                                 "/",
-                                "/favicon.ico"
+                                "/favicon.ico",
+                                "/error"
                         ).permitAll()
                         // 인증 없이 접근 가능한 API
                         .requestMatchers("/api/auth/**").permitAll()

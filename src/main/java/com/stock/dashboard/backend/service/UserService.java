@@ -1,20 +1,24 @@
 package com.stock.dashboard.backend.service;
 
 import com.stock.dashboard.backend.exception.ResourceNotFoundException;
+import com.stock.dashboard.backend.model.EmailVerificationToken;
 import com.stock.dashboard.backend.model.Role;
 import com.stock.dashboard.backend.model.RoleName;
 import com.stock.dashboard.backend.model.User;
 import com.stock.dashboard.backend.model.payload.request.SignUpRequest;
 import com.stock.dashboard.backend.model.payload.request.UpdatePasswordRequest;
 import com.stock.dashboard.backend.model.payload.request.UpdateUserRequest;
-
 import com.stock.dashboard.backend.model.payload.response.UserProfileResponse;
+import com.stock.dashboard.backend.repository.EmailVerificationTokenRepository;
 import com.stock.dashboard.backend.repository.RoleRepository;
 import com.stock.dashboard.backend.repository.UserRepository;
-import com.stock.dashboard.backend.security.JwtTokenProvider;
+import com.stock.dashboard.backend.util.VerificationTokenCodec;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.time.Duration;
 
 @Service
 @RequiredArgsConstructor
@@ -23,48 +27,106 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final RoleRepository roleRepository;
+
+    /**
+     * ✅ 통합된 EmailService
+     * - sendEmailVerification(toEmail, rawToken) 단일 메서드만 사용
+     */
     private final EmailService emailService;
-    private final JwtTokenProvider jwtTokenProvider;
 
+    /**
+     * ✅ 이메일 인증 토큰(해시) 저장용 Repository
+     * - rawToken은 저장하지 않고 hash만 저장한다.
+     */
+    private final EmailVerificationTokenRepository emailVerificationTokenRepository;
 
+    /**
+     * ✅ rawToken 생성 + sha256 해시 계산 유틸(컴포넌트)
+     * - 토큰 생성/해시 로직을 한 군데로 모아서 중복/실수 방지
+     */
+    private final VerificationTokenCodec verificationTokenCodec;
 
-    //회원가입
-    public User registerUser(SignUpRequest req){
+    /**
+     * ✅ 이메일 인증 토큰 TTL(분)
+     * - 통합 스펙에서 권장: 15분
+     * - application.properties에 app.email.verify-token-ttl-minutes 값이 있으면 그걸 사용
+     * - 없으면 기본값 15로 동작
+     */
+    @Value("${app.email.verify-token-ttl-minutes:15}")
+    private long verifyTokenTtlMinutes;
+
+    // ---------------------------------------------------------------------
+    // ✅ 회원가입 (로컬) - JWT 이메일 인증 제거 + DB 토큰 방식으로 전환
+    // ---------------------------------------------------------------------
+    public User registerUser(SignUpRequest req) {
+
+        // 1) 이메일 중복 체크
+        // - 이미 가입된 이메일이면 회원가입 자체를 막는다.
+        // - (추후 예외 표준화에서 409로 바꿀 예정)
         if (userRepository.existsByEmail(req.getEmail())) {
             throw new IllegalArgumentException("이미 존재하는 이메일입니다.");
         }
-      String encodePw  = passwordEncoder.encode(req.getPassword()); // 비번 인코딩
+
+        // 2) 비밀번호 인코딩
+        String encodePw  = passwordEncoder.encode(req.getPassword());
+
+        // 3) User 생성
+        // - provider는 local
+        // - emailVerified=false 로 시작 (메일 클릭 verify 성공 시 true가 됨)
         User user = new User(
                 req.getEmail(),
                 encodePw,
                 req.getName(),
                 req.getAge(),
                 req.getPhoneNumber(),
-                "local", // provider (현재는 local 고정)
-                false    // emailVerified 초기값
-
+                "local",
+                false
         );
-//롤 유저 권한 부여
+
+        // 4) ROLE_USER 권한 부여
         Role userRole = roleRepository.findByRole(RoleName.ROLE_USER)
                 .orElseThrow(() -> new RuntimeException("Role Not Found"));
-
         user.addRole(userRole);
 
-        //  DB 저장
+        // 5) DB 저장 (userId가 있어야 토큰 테이블에 userId를 저장할 수 있음)
         User savedUser = userRepository.save(user);
 
+        // -----------------------------------------------------------------
+        // ✅ 여기부터가 "JWT 이메일 인증"을 완전히 대체하는 핵심 로직
+        // -----------------------------------------------------------------
 
-        //  이메일 인증 토큰 생성
-        String token = jwtTokenProvider.generateEmailVerificationToken(savedUser);
+        // 6) rawToken 생성 (메일 링크에 들어갈 '원문 토큰')
+        // - rawToken은 절대 DB에 저장하지 않는다.
+        String rawToken = verificationTokenCodec.newRawToken();
 
+        // 7) rawToken을 sha256으로 해시해서 DB에 저장할 값 생성
+        // - DB에는 tokenHash만 저장 (rawToken 유출 방지)
+        String tokenHash = verificationTokenCodec.sha256Hex(rawToken);
 
-        //  인증 메일 발송
-        emailService.sendVerificationEmail(savedUser, token);
+        // 8) EmailVerificationToken 엔티티 생성 + 저장
+        // - TTL(기본 15분)을 적용해 expiresAt이 설정된다.
+        EmailVerificationToken tokenEntity =
+                EmailVerificationToken.create(
+                        savedUser.getId(),
+                        savedUser.getEmail(),
+                        tokenHash,
+                        Duration.ofMinutes(verifyTokenTtlMinutes)
+                );
 
-        // 저장된 user 반환
+        emailVerificationTokenRepository.save(tokenEntity);
+
+        // 9) 인증 메일 발송 (항상 백엔드 verify API 링크로 발송)
+        // - 링크: {BACKEND}/api/auth/email/verify?token={rawToken}
+        // - verify 성공 후 redirect는 추후 EmailVerificationService에서 담당
+        emailService.sendEmailVerification(savedUser.getEmail(), rawToken);
+
+        // 10) 저장된 user 반환
         return savedUser;
-
     }
+
+    // ---------------------------------------------------------------------
+    // 아래는 기존 기능 그대로 유지 (프로필/비밀번호 변경)
+    // ---------------------------------------------------------------------
 
     public UserProfileResponse getUserProfile(Long userId) {
         User user = userRepository.findById(userId)
@@ -85,16 +147,12 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
 
-        // 기존 비밀번호 확인
         if (!passwordEncoder.matches(req.getOldPassword(), user.getPassword())) {
             throw new IllegalArgumentException("Old password is incorrect");
         }
-        // 새로운 비밀번호 인코딩
-     String encodePw = passwordEncoder.encode(req.getNewPassword());
 
-        // 엔티티의 커스텀 메서드 사용
+        String encodePw = passwordEncoder.encode(req.getNewPassword());
         user.updatePassword(encodePw);
-
         userRepository.save(user);
     }
 }

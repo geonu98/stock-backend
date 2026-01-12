@@ -10,6 +10,8 @@ import org.springframework.web.client.RestTemplate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
@@ -29,34 +31,37 @@ public class KakaoOAuthService implements SocialOAuthService {
     @Value("${kakao.client-secret}")
     private String clientSecret;
 
-    @Value("${kakao.redirect-uri}")
-    private String redirectUri;
+    // ✅ 프론트 주소를 받아서 redirect_uri를 "코드로" 고정 생성
+    @Value("${app.frontend.url}")
+    private String frontendUrl;
 
     private final RestTemplate restTemplate = new RestTemplate();
 
-    /**
-     * 해당 Provider 문자열이 Kakao인지 확인
-     * SocialLoginService에서 Adapter 선택할 때 사용
-     */
     @Override
     public boolean supports(String provider) {
         return provider.equalsIgnoreCase("kakao");
     }
 
-    /**
-     * code로 AccessToken 요청 후 사용자 정보 획득
-     */
     @Override
     public SocialUserInfo getUserInfo(String code) {
         String accessToken = requestAccessToken(code);
         return requestKakaoUserInfo(accessToken);
     }
 
-    /**
-     * Authorization Code → Access Token 교환 요청
-     */
+    @Override
+    public String getAuthorizeUrl(String redirectUri) {
+        return "https://kauth.kakao.com/oauth/authorize"
+                + "?client_id=" + clientId
+                + "&redirect_uri=" + URLEncoder.encode(redirectUri, StandardCharsets.UTF_8)
+                + "&response_type=code";
+    }
+
     private String requestAccessToken(String code) {
         String url = "https://kauth.kakao.com/oauth/token";
+
+        // ✅ authorize 때와 "완전히 동일한" redirect_uri를 사용해야 함
+        String redirectUri = frontendUrl + "/oauth/callback";
+        log.info("[KAKAO] token redirect_uri={}", redirectUri);
 
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
         params.add("grant_type", "authorization_code");
@@ -78,10 +83,6 @@ public class KakaoOAuthService implements SocialOAuthService {
         return (String) response.getBody().get("access_token");
     }
 
-    /**
-     * Access Token으로 카카오 사용자 정보 요청
-     * → SocialUserInfo 형태로 변환하여 반환
-     */
     private SocialUserInfo requestKakaoUserInfo(String accessToken) {
         String url = "https://kapi.kakao.com/v2/user/me";
 

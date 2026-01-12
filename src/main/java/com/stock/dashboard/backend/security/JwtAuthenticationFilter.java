@@ -18,7 +18,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
-
 @Component
 @Slf4j
 @RequiredArgsConstructor
@@ -34,53 +33,54 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Value("${app.jwt.header.prefix}")
     private String tokenRequestHeaderPrefix;
 
-    //  JWT 필터를 적용하지 않을 경로 (소셜 로그인 확장 포함)
-    private static final List<String> EXCLUDED_PATHS = List.of(
-            "/api/auth/",      // 회원가입, 로그인, 이메일 인증 등
-            "/api/auth/oauth",     //  명시적으로 추가 (가독성용)
-            "/api/auth/oauth",     //  명시적으로 추가
-            "/oauth2/",        // OAuth2 인증 시작
-            "/login/oauth2/",  // 소셜 로그인 Redirect URI
+    /**
+     * ✅ JWT 필터를 적용하지 않을 경로 prefix 목록
+     * - 로그인/회원가입/토큰재발급/소셜로그인 시작/콜백은 "로그인 전" 요청이므로 JWT 검사하면 안 됨
+     */
+    private static final List<String> EXCLUDED_PREFIXES = List.of(
+            "/api/auth",          // ✅ /api/auth/login, /api/auth/refresh, /api/auth/oauth/... 전부 포함
             "/swagger",
+            "/swagger-ui",
+            "/swagger-resources",
             "/v3/api-docs",
             "/api-docs",
             "/error"
     );
 
-    //  shouldNotFilter → true면 필터 자체를 실행하지 않음
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getServletPath();
+        // ✅ URI 기준이 제일 안전함 (servletPath보다 덜 헷갈림)
+        String uri = request.getRequestURI();
         String method = request.getMethod();
 
-        log.warn("[DEBUG] shouldNotFilter() method={} path={}", method, path);
+        // OPTIONS preflight는 무조건 패스
+        if ("OPTIONS".equalsIgnoreCase(method)) return true;
 
-        // OPTIONS는 무조건 예외
-        if ("OPTIONS".equalsIgnoreCase(method)) {
-            log.warn("[DEBUG] → skip OPTIONS");
-            return true;
-        }
-
-        boolean skip = EXCLUDED_PATHS.stream().anyMatch(path::startsWith);
-        log.warn("[DEBUG] EXCLUDED? {} → {}", path, skip);
-
+        boolean skip = EXCLUDED_PREFIXES.stream().anyMatch(uri::startsWith);
+        log.info("[JwtFilter] shouldNotFilter? {} {} -> {}", method, uri, skip);
         return skip;
     }
 
-
     @Override
-    protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain filterChain)
-            throws ServletException, IOException {
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain
+    ) throws ServletException, IOException {
 
         String jwt = getJwtFromRequest(request);
-        log.info("[JwtFilter] Incoming JWT: {}", jwt);
+        log.debug("[JwtFilter] Incoming JWT: {}", jwt);
 
         try {
-            if (StringUtils.hasText(jwt) && jwtTokenValidator.validateToken(jwt)) {
-                Long userId = jwtTokenProvider.getUserIdFromJWT(jwt);
+            // ✅ 토큰이 없으면 그냥 통과 (permitAll 경로/익명 요청 가능)
+            if (!StringUtils.hasText(jwt)) {
+                filterChain.doFilter(request, response);
+                return;
+            }
 
+            // ✅ 토큰이 있으면 검증 후 인증 세팅
+            if (jwtTokenValidator.validateToken(jwt)) {
+                Long userId = jwtTokenProvider.getUserIdFromJWT(jwt);
                 UserDetails userDetails = customUserDetailsService.loadUserById(userId);
 
                 UsernamePasswordAuthenticationToken authentication =
@@ -89,7 +89,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         );
 
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
 
