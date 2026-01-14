@@ -53,15 +53,13 @@ public class EmailVerificationFilter extends OncePerRequestFilter {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        if (!user.getEmailVerified() || user.hasTempEmail()) {
+
+        // ✅ stub(email=null) 또는 미인증(emailVerified=false) 차단
+        if (user.getEmail() == null || !Boolean.TRUE.equals(user.getEmailVerified())) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setCharacterEncoding("UTF-8");
             response.setContentType("application/json");
-            response.getWriter().write("""
-    {
-      "code": "EMAIL_VERIFICATION_REQUIRED",
-      "message": "이메일 인증이 필요합니다."
-    }
-    """);
+            response.getWriter().write("{\"error\":\"EMAIL_NOT_VERIFIED\"}");
             return;
         }
 

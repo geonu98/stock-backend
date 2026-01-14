@@ -17,7 +17,7 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 @Documented
 @Constraint(validatedBy = NullOrNotBlankValidator.class)
 public @interface NullOrNotBlank {
-    // 🛑 메시지 키도 Jakarta EE 기준으로 변경
+    // 메시지 키도 Jakarta EE 기준으로 변경
     String message() default "{jakarta.validation.constraints.Pattern.message}";
 
     Class<?>[] groups() default {};

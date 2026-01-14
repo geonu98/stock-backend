@@ -1,18 +1,24 @@
 package com.stock.dashboard.backend.model.audit;
 
-import com.stock.dashboard.backend.model.vo.DeviceType; //  경로 추정 및 수정
+
 import com.stock.dashboard.backend.validation.annotation.NullOrNotBlank; //  경로 수정
 
 import jakarta.validation.constraints.NotBlank; //  Jakarta EE로 변경
-import jakarta.validation.constraints.NotNull; //  Jakarta EE로 변경
+
 
 public class DeviceInfo {
 
     @NotBlank(message = "Device id cannot be blank")
     private String deviceId;
 
-    @NotNull(message = "Device type cannot be null")
-    private DeviceType deviceType;
+    /**
+     * 외부에서 입력받는 디바이스 타입
+     * - WEB / ANDROID / IOS / WINDOWS / MACOS / ETC
+     * - DTO 계층에서는 String으로 받는다
+     * - enum 변환은 Service 내부에서만 수행 (선택)
+     */
+    @NotBlank(message = "Device type cannot be blank")
+    private String deviceType;
 
     @NullOrNotBlank(message = "Device notification token can be null but not blank")
     private String notificationToken;
@@ -20,7 +26,7 @@ public class DeviceInfo {
     public DeviceInfo() {
     }
 
-    public DeviceInfo(String deviceId, DeviceType deviceType, String notificationToken) {
+    public DeviceInfo(String deviceId, String deviceType, String notificationToken) {
         this.deviceId = deviceId;
         this.deviceType = deviceType;
         this.notificationToken = notificationToken;
@@ -34,11 +40,11 @@ public class DeviceInfo {
         this.deviceId = deviceId;
     }
 
-    public DeviceType getDeviceType() {
+    public String getDeviceType() {
         return deviceType;
     }
 
-    public void setDeviceType(DeviceType deviceType) {
+    public void setDeviceType(String deviceType) {
         this.deviceType = deviceType;
     }
 

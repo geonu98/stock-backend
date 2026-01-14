@@ -11,8 +11,8 @@ public class DeviceInfo {
     @NotBlank(message = "Device id cannot be blank")
     private String deviceId;
 
-    @NotNull(message = "Device type cannot be null")
-    private DeviceType deviceType;
+    @NotBlank(message = "Device type cannot be blank")
+    private String deviceType;
 
     @NullOrNotBlank(message = "Device notification token can be null but not blank")
     private String notificationToken;
@@ -20,7 +20,7 @@ public class DeviceInfo {
     public DeviceInfo() {
     }
 
-    public DeviceInfo(String deviceId, DeviceType deviceType, String notificationToken) {
+    public DeviceInfo(String deviceId, String deviceType, String notificationToken) {
         this.deviceId = deviceId;
         this.deviceType = deviceType;
         this.notificationToken = notificationToken;
@@ -34,13 +34,11 @@ public class DeviceInfo {
         this.deviceId = deviceId;
     }
 
-    public DeviceType getDeviceType() {
+    public String getDeviceType() {
         return deviceType;
     }
 
-    public void setDeviceType(DeviceType deviceType) {
-        this.deviceType = deviceType;
-    }
+    public void setDeviceType(String deviceType) { this.deviceType = deviceType; }
 
     public String getNotificationToken() {
         return notificationToken;

@@ -7,7 +7,11 @@ import com.stock.dashboard.backend.security.model.CustomUserDetails;
 import com.stock.dashboard.backend.service.AuthService;
 import com.stock.dashboard.backend.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -59,7 +63,7 @@ public class AuthController {
      * - 최종 로그인 처리는 "메일 클릭 verify → 프론트 code 수신 → exchange"에서 완료된다.
      */
     @PostMapping("/signup")
-    public ResponseEntity<?> regiserUser(@RequestBody SignUpRequest request) {
+    public ResponseEntity<?> regiserUser(@Valid @RequestBody SignUpRequest request) {
         log.info("[AuthController] Signup request received: email={}", request.getEmail());
 
         User savedUser = userService.registerUser(request);
@@ -144,4 +148,21 @@ public class AuthController {
         authService.resendVerificationEmail(request.getEmail());
         return ResponseEntity.ok("이메일 인증 메일을 다시 보냈습니다.");
     }
+
+    @PostMapping("/check-email")
+    public ResponseEntity<?> checkEmail(@Valid @RequestBody EmailCheckRequest req) {
+
+        boolean available = !userService.existsByEmail(req.getEmail().trim());
+
+        return ResponseEntity.ok(new EmailCheckResponse(available));
+    }
+
+    @Data
+    public static class EmailCheckRequest {
+        @NotBlank
+        @Email
+        private String email;
+    }
+
+    public record EmailCheckResponse(boolean available) {}
 }

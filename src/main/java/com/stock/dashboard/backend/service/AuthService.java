@@ -16,7 +16,8 @@ import com.stock.dashboard.backend.security.JwtTokenValidator;
 import com.stock.dashboard.backend.security.model.CustomUserDetails;
 import com.stock.dashboard.backend.util.VerificationTokenCodec;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.AllArgsConstructor;
+
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -32,7 +33,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Service
-@AllArgsConstructor
+@RequiredArgsConstructor
 @Slf4j
 public class AuthService {
 

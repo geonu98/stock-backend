@@ -1,10 +1,11 @@
 package com.stock.dashboard.backend.service;
 
+import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.util.UriUtils;
@@ -96,35 +97,70 @@ public class EmailService {
         String verifyUrl = backendBaseUrl + "/api/auth/email/verify?token=" + encodedToken;
 
         // -----------------------------
-        // 3) 메일 메시지 구성
+        // 3) 메일 메시지 구성 (HTML 메일)
         // -----------------------------
-        SimpleMailMessage message = new SimpleMailMessage();
+        // 네이버 메일 등 일부 클라이언트에서 text/plain 링크가 클릭되지 않는 문제가 있어서
+        // HTML 메일로 보내 버튼/링크 클릭이 확실히 되도록 한다.
+        try {
+            MimeMessage mimeMessage = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, "UTF-8");
 
-        // 발신자 표시(메일 클라이언트에 따라 다르게 보일 수 있음)
-        // "Stock Dashboard <sender@gmail.com>" 형태로 보이게 한다.
-        message.setFrom(String.format("Stock Dashboard <%s>", senderEmail));
+            // 발신자 표시(메일 클라이언트에 따라 다르게 보일 수 있음)
+            // "Stock Dashboard <sender@gmail.com>" 형태로 보이게 한다.
+            helper.setFrom(String.format("Stock Dashboard <%s>", senderEmail));
 
-        // 수신자
-        message.setTo(toEmail);
+            // 수신자
+            helper.setTo(toEmail);
 
-        // 제목
-        message.setSubject("[Stock Dashboard] 이메일 인증을 완료해주세요");
+            // 제목
+            helper.setSubject("[Stock Dashboard] 이메일 인증을 완료해주세요");
 
-        // 본문
-        // - 링크 클릭 유도
-        // - 만료 시간 안내 (실제 TTL은 서버 설정/DB expiresAt 기준)
-        message.setText("""
-                아래 링크를 클릭하여 이메일 인증을 완료해주세요:
+            // 본문
+            // - 버튼 클릭 유도
+            // - 만료 시간 안내 (실제 TTL은 서버 설정/DB expiresAt 기준)
+            // - 버튼이 안 되면 링크 복사/붙여넣기 안내
+            String html = """
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+                      <p>아래 버튼을 클릭하여 이메일 인증을 완료해주세요.</p>
 
-                %s
+                      <p>
+                        <a href="%s"
+                           style="display:inline-block;
+                                  padding:10px 16px;
+                                  border-radius:10px;
+                                  background:#2563eb;
+                                  color:#ffffff;
+                                  text-decoration:none;">
+                          이메일 인증하기
+                        </a>
+                      </p>
 
-                ※ 이 링크는 일정 시간이 지나면 만료됩니다.
-                """.formatted(verifyUrl));
+                      <p style="color:#6b7280; font-size:12px;">
+                        버튼이 동작하지 않으면 아래 링크를 복사해서 브라우저에 붙여넣어주세요.
+                      </p>
 
-        // -----------------------------
-        // 4) 메일 전송
-        // -----------------------------
-        mailSender.send(message);
+                      <p style="word-break: break-all; font-size:12px;">
+                        %s
+                      </p>
+
+                      <p style="color:#6b7280; font-size:12px;">
+                        이 링크는 일정 시간이 지나면 만료됩니다.
+                      </p>
+                    </div>
+                    """.formatted(verifyUrl, verifyUrl);
+
+            helper.setText(html, true);
+
+            // -----------------------------
+            // 4) 메일 전송
+            // -----------------------------
+            mailSender.send(mimeMessage);
+
+        } catch (Exception e) {
+            // 메일 전송 실패는 가입/연결 플로우에 직접 영향을 주므로 로그를 남기고 예외를 던진다.
+            log.error("[EMAIL] verification mail send failed to={}", toEmail, e);
+            throw new IllegalStateException("Failed to send verification email", e);
+        }
 
         // -----------------------------
         // 5) 로깅 (추적 목적)

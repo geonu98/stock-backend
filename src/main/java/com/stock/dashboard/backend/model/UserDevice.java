@@ -30,9 +30,8 @@ public class UserDevice extends DateAudit {
     @JoinColumn(name = "USER_ID", nullable = false)
     private User user;
 
-    @Column(name = "DEVICE_TYPE")
-    @Enumerated(value = EnumType.STRING)
-    private DeviceType deviceType;
+    @Column(name = "DEVICE_TYPE", length = 30)
+    private String deviceType;
 
     @Column(name = "NOTIFICATION_TOKEN")
     private String notificationToken;

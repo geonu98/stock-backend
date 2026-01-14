@@ -17,6 +17,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import com.stock.dashboard.backend.util.NicknameGenerator;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.Duration;
 
@@ -82,6 +84,8 @@ public class UserService {
                 "local",
                 false
         );
+        //  닉네임 무조건 생성(유니크)
+        ensureNickname(user);
 
         // 4) ROLE_USER 권한 부여
         Role userRole = roleRepository.findByRole(RoleName.ROLE_USER)
@@ -89,8 +93,16 @@ public class UserService {
         user.addRole(userRole);
 
         // 5) DB 저장 (userId가 있어야 토큰 테이블에 userId를 저장할 수 있음)
-        User savedUser = userRepository.save(user);
-
+        User savedUser;
+        try {
+            savedUser = userRepository.save(user);
+        } catch (DataIntegrityViolationException e) {
+            // nickname unique 충돌 대비: 한번 더 생성해서 재시도
+            user.updateNickname(generateUniqueNickname(
+                    (req.getName() != null && !req.getName().isBlank()) ? req.getName() : req.getEmail()
+            ));
+            savedUser = userRepository.save(user);
+        }
         // -----------------------------------------------------------------
         // ✅ 여기부터가 "JWT 이메일 인증"을 완전히 대체하는 핵심 로직
         // -----------------------------------------------------------------
@@ -154,5 +166,59 @@ public class UserService {
         String encodePw = passwordEncoder.encode(req.getNewPassword());
         user.updatePassword(encodePw);
         userRepository.save(user);
+    }
+
+    private String generateUniqueNickname(String displayNameOrEmailOrUsername) {
+        String base = NicknameGenerator.baseFrom(displayNameOrEmailOrUsername);
+
+        // 충돌 거의 없지만 안전하게 재시도
+        for (int i = 0; i < 20; i++) {
+            String candidate = NicknameGenerator.withSuffix(base);
+            if (!userRepository.existsByNickname(candidate)) {
+                return candidate;
+            }
+        }
+
+        // 극단적 케이스 fallback
+        return base + (System.currentTimeMillis() % 100000);
+    }
+
+    /**
+     * 저장 직전에 nickname이 비어있으면 채워주는 공통 보정
+     */
+    private void ensureNickname(User user) {
+        if (user.getNickname() == null || user.getNickname().isBlank()) {
+            // 우선순위: name -> email -> username -> "user"
+            String seed =
+                    (user.getName() != null && !user.getName().isBlank()) ? user.getName()
+                            : (user.getEmail() != null && !user.getEmail().isBlank()) ? user.getEmail()
+                            : (user.getUsername() != null && !user.getUsername().isBlank()) ? user.getUsername()
+                            : "user";
+
+            user.updateNickname(generateUniqueNickname(seed));
+        }
+    }
+    public void ensureNicknameBeforeSave(User user, String preferredSeed) {
+        if (user.getNickname() != null && !user.getNickname().isBlank()) {
+            return;
+        }
+        forceRegenerateNickname(user, preferredSeed);
+    }
+
+    public void ensureNicknameBeforeSave(User user) {
+        ensureNicknameBeforeSave(user, null);
+    }
+    public void forceRegenerateNickname(User user, String preferredSeed) {
+        String seed =
+                (preferredSeed != null && !preferredSeed.isBlank()) ? preferredSeed
+                        : (user.getName() != null && !user.getName().isBlank()) ? user.getName()
+                        : (user.getEmail() != null && !user.getEmail().isBlank()) ? user.getEmail()
+                        : (user.getUsername() != null && !user.getUsername().isBlank()) ? user.getUsername()
+                        : "user";
+
+        user.updateNickname(generateUniqueNickname(seed));
+    }
+    public boolean existsByEmail(String email) {
+        return userRepository.existsByEmail(email);
     }
 }

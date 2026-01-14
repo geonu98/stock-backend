@@ -4,10 +4,13 @@ import com.stock.dashboard.backend.exception.BadRequestException;
 import com.stock.dashboard.backend.exception.ExpiredTokenException;
 import com.stock.dashboard.backend.exception.ResourceAlreadyInUseException;
 import com.stock.dashboard.backend.model.EmailVerificationToken;
+import com.stock.dashboard.backend.model.Role;
+import com.stock.dashboard.backend.model.RoleName;
 import com.stock.dashboard.backend.model.User;
 import com.stock.dashboard.backend.model.payload.request.LoginRequest;
 import com.stock.dashboard.backend.model.payload.response.JwtAuthenticationResponse;
 import com.stock.dashboard.backend.repository.EmailVerificationTokenRepository;
+import com.stock.dashboard.backend.repository.RoleRepository;
 import com.stock.dashboard.backend.repository.UserRepository;
 import com.stock.dashboard.backend.security.model.CustomUserDetails;
 import com.stock.dashboard.backend.util.VerificationTokenCodec;
@@ -66,6 +69,7 @@ public class EmailVerificationService {
 
     private final EmailVerificationTokenRepository emailVerificationTokenRepository;
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
 
     /**
      * 최종 로그인 토큰(AT/RT) 발급은 AuthService가 담당한다.
@@ -98,27 +102,6 @@ public class EmailVerificationService {
 
     /**
      * ✅ 1) 이메일 인증 링크 클릭 처리 (verify)
-     *
-     * 이메일 링크 예)
-     *   GET /api/auth/email/verify?token=xxxx(rawToken)
-     *
-     * 흐름
-     * 0) token 파라미터 검증
-     * 1) rawToken -> tokenHash 변환(sha256)
-     * 2) DB에서 tokenHash로 EmailVerificationToken 조회
-     * 3) 만료/사용 여부 체크
-     * 4) userId로 사용자 조회
-     * 5) (핵심) 해당 이메일이 "다른 사용자"에게 이미 사용중인지 체크
-     * 6) user.email = token.email, user.emailVerified=true 처리
-     * 7) token.usedAt 기록(1회용 처리)
-     * 8) Redis에 1회용 code 저장 (TTL 5분)
-     * 9) 프론트 redirect URL 반환 (/email-verified?code=...)
-     *
-     * ✅ 상태코드
-     * - token 누락/위조: 400
-     * - token 만료: 410
-     * - token 재사용: 409
-     * - 이메일 충돌: 409
      */
     @Transactional
     public String verifyEmail(String rawToken) {
@@ -132,13 +115,11 @@ public class EmailVerificationService {
 
         // -----------------------------------------------------------------
         // 1) rawToken -> tokenHash
-        // - DB에는 rawToken을 저장하지 않고, tokenHash만 저장한다.
-        // - 따라서 조회도 hash로만 한다.
         // -----------------------------------------------------------------
         String tokenHash = verificationTokenCodec.sha256Hex(rawToken);
 
         // -----------------------------------------------------------------
-        // 2) DB 조회: 없으면 위조/잘못된 token -> 400
+        // 2) DB 조회
         // -----------------------------------------------------------------
         EmailVerificationToken token = emailVerificationTokenRepository
                 .findByTokenHash(tokenHash)
@@ -146,8 +127,6 @@ public class EmailVerificationService {
 
         // -----------------------------------------------------------------
         // 3) 만료/사용 여부 체크
-        // - 만료: 410
-        // - 이미 사용됨: 409
         // -----------------------------------------------------------------
         if (token.isExpired()) {
             throw new ExpiredTokenException("Email verification token expired");
@@ -157,8 +136,7 @@ public class EmailVerificationService {
         }
 
         // -----------------------------------------------------------------
-        // 4) 토큰에 들어있는 userId로 사용자 조회
-        // - 토큰은 userId만 들고 있으므로, 연관관계(token.getUser())는 없다.
+        // 4) 사용자 조회
         // -----------------------------------------------------------------
         User user = userRepository.findById(token.getUserId())
                 .orElseThrow(() -> new BadRequestException("User not found"));
@@ -166,9 +144,7 @@ public class EmailVerificationService {
         String emailToConnect = token.getEmail();
 
         // -----------------------------------------------------------------
-        // 5) (핵심) 이메일 중복 방지 -> 409
-        // - 이 이메일이 이미 다른 사용자에게 사용 중이면 연결하면 안 된다.
-        // - 단, "내가 이미 이 이메일을 가진 상태"면 통과 가능.
+        // 5) 이메일 중복 체크
         // -----------------------------------------------------------------
         userRepository.findByEmail(emailToConnect)
                 .filter(existing -> !existing.getId().equals(user.getId()))
@@ -178,25 +154,32 @@ public class EmailVerificationService {
 
         // -----------------------------------------------------------------
         // 6) 유저 상태 업데이트
-        // - 소셜 EMAIL_REQUIRED: connectEmail(email)로 email을 확정
-        // - 로컬 signup: 이미 email이 있을 수 있으나, 안전하게 동일 값으로 세팅해도 무방
-        // - 그리고 emailVerified=true 로 인증 완료 처리
         // -----------------------------------------------------------------
-        user.connectEmail(emailToConnect); // 네 User 엔티티에 존재하는 메서드 전제
-        user.verifyEmail();                // emailVerified=true 처리 전제
+        user.connectEmail(emailToConnect);
+        user.verifyEmail();
         userRepository.save(user);
 
         // -----------------------------------------------------------------
+        // 6-1)  EMAIL 인증 완료 시 ROLE_USER 보장 (소셜 EMAIL_REQUIRED 플로우 핵심 보완)
+        // - 로컬 회원가입은 가입 시점에 ROLE_USER가 이미 존재
+        // - 소셜 + EMAIL_REQUIRED 유저는 여기서 최초 ROLE_USER가 부여된다.
+        // - USER_AUTHORITY가 비어 있는 상태를 절대 허용하지 않는다.
+        // -----------------------------------------------------------------
+        if (user.getRoles() == null || user.getRoles().isEmpty()) {
+            Role userRole = roleRepository.findByRole(RoleName.ROLE_USER)
+                    .orElseThrow(() -> new IllegalStateException("ROLE_USER not found"));
+            user.addRole(userRole);
+            userRepository.save(user);
+        }
+
+        // -----------------------------------------------------------------
         // 7) 토큰 1회용 처리
-        // - usedAt 기록하여 링크 2번 클릭 시 409로 막는다.
         // -----------------------------------------------------------------
         token.markUsed();
         emailVerificationTokenRepository.save(token);
 
         // -----------------------------------------------------------------
         // 8) 1회용 code 발급 + Redis 저장 (TTL 5분)
-        // - URL에는 AT/RT 절대 실어 보내지 않음
-        // - URL에는 짧은 TTL의 code만 전달
         // -----------------------------------------------------------------
         String loginCode = UUID.randomUUID().toString();
         String redisKey = REDIS_KEY_PREFIX + loginCode;
@@ -208,7 +191,6 @@ public class EmailVerificationService {
 
         // -----------------------------------------------------------------
         // 9) 프론트 redirect URL 생성
-        // - code는 URL 파라미터로 들어가므로 인코딩을 습관적으로 적용
         // -----------------------------------------------------------------
         String encodedCode = UriUtils.encode(loginCode, StandardCharsets.UTF_8);
         return frontendUrl + "/email-verified?code=" + encodedCode;
@@ -216,30 +198,14 @@ public class EmailVerificationService {
 
     /**
      * ✅ 2) 프론트에서 code를 받아 최종 로그인 토큰 교환 (exchange)
-     *
-     * POST /api/auth/email/exchange
-     * body: { code, deviceInfo }
-     *
-     * 흐름
-     * 0) 입력 검증(code/deviceInfo)
-     * 1) Redis에서 code 조회 (없으면 만료 -> 410)
-     * 2) Redis delete 결과 체크 (1회용 소모 강화) -> 실패면 409
-     * 3) userId로 유저 조회
-     * 4) emailVerified=true 재확인 (아니면 400)
-     * 5) authService.generateTokens로 AT/RT 발급
      */
     @Transactional
     public JwtAuthenticationResponse exchangeCode(String code, LoginRequest loginRequest) {
 
-        // -----------------------------------------------------------------
-        // 0) 입력 검증
-        // -----------------------------------------------------------------
         if (!StringUtils.hasText(code)) {
             throw new BadRequestException("Code is required");
         }
 
-        // verify 단계에서는 deviceInfo를 받지 않는다.
-        // exchange 단계에서만 "실제 로그인할 디바이스"가 확정되므로 여기서만 받는다.
         if (loginRequest == null || loginRequest.getDeviceInfo() == null) {
             throw new BadRequestException("DeviceInfo is required");
         }
@@ -249,39 +215,23 @@ public class EmailVerificationService {
 
         String redisKey = REDIS_KEY_PREFIX + code;
 
-        // -----------------------------------------------------------------
-        // 1) Redis 조회
-        // - 없으면 만료/위조/잘못된 code -> 410
-        // -----------------------------------------------------------------
         Object valueObj = redisTemplate.opsForValue().get(redisKey);
         if (valueObj == null) {
             throw new ExpiredTokenException("Invalid or expired verification code");
         }
 
-        // -----------------------------------------------------------------
-        // 2) 1회용 소모 강화
-        // - delete가 true가 아니면 이미 누가 먼저 소모했거나 중복 요청 -> 409
-        // -----------------------------------------------------------------
         Boolean deleted = redisTemplate.delete(redisKey);
         if (!Boolean.TRUE.equals(deleted)) {
             throw new ResourceAlreadyInUseException("EmailVerificationCode", "code", code);
         }
 
-        // -----------------------------------------------------------------
-        // 3) userId 파싱
-        // -----------------------------------------------------------------
         Long userId;
         try {
             userId = Long.valueOf(valueObj.toString());
         } catch (NumberFormatException e) {
-            // Redis 값이 예상과 다르면 서버 구성 문제지만,
-            // 프론트에는 요청 오류로 반환하는 편이 안전
             throw new BadRequestException("Invalid verification code payload", e);
         }
 
-        // -----------------------------------------------------------------
-        // 4) 유저 조회 + 이메일 인증 상태 재확인
-        // -----------------------------------------------------------------
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BadRequestException("User not found"));
 
@@ -289,10 +239,6 @@ public class EmailVerificationService {
             throw new BadRequestException("Email not verified");
         }
 
-        // -----------------------------------------------------------------
-        // 5) 최종 토큰 발급 (AT/RT)
-        // - 이 시점이 "로그인 완료"다.
-        // -----------------------------------------------------------------
         CustomUserDetails userDetails = new CustomUserDetails(user);
         return authService.generateTokens(userDetails, loginRequest);
     }

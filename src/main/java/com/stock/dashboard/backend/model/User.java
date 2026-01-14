@@ -3,6 +3,7 @@ package com.stock.dashboard.backend.model;
 import com.stock.dashboard.backend.model.audit.DateAudit;
 import com.stock.dashboard.backend.model.payload.request.UpdateUserRequest;
 import com.stock.dashboard.backend.model.vo.InterestsVO;
+import com.stock.dashboard.backend.util.UsernameGenerator;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.ToString;
@@ -35,7 +36,7 @@ public class User extends DateAudit implements UserDetails {
     @Column(name = "USERNAME", unique = true, length = 30)
     private String username;
 
-    @Column(name = "NICKNAME", unique = true, length = 50) // 길이와 유니크 지정
+    @Column(name = "NICKNAME", unique = true, length = 50)
     private String nickname;
 
     @Column(name = "PASSWORD")
@@ -127,14 +128,10 @@ public static User createSocialUser(
 ) {
     User user = new User();
 
-    // 1) 이메일이 없는 경우 → 임시 이메일 생성
-    if (email == null || email.isBlank()) {
-        email = provider.toLowerCase() + "-" + providerId + "@social.temp";
-    }
-    user.email = email;
+    user.email = (email == null || email.isBlank()) ? null : email;
 
-    // 2) username = provider + "_" + providerId (중복 절대 없음)
-    user.username = provider.toLowerCase() + "_" + providerId;
+
+    user.username = UsernameGenerator.generate(provider, providerId);
 
     // 3) nickname null 허용
     user.nickname = nickname;
@@ -156,6 +153,32 @@ public static User createSocialUser(
 
     return user;
 }
+//이메일 없는용 따로 하나 만듬
+    public static User createSocialStub(
+            String provider,
+            String providerId,
+            String nickname,
+            String profileImage,
+            Role defaultRole
+    ) {
+        User user = new User();
+
+        user.email = null;                 // ✅ 핵심: email은 비워둔다
+        user.username = UsernameGenerator.generate(provider, providerId);
+        user.nickname = nickname;
+        user.password = "SOCIAL_LOGIN";
+        user.provider = provider;
+        user.providerId = providerId;
+        user.profileImage = profileImage;
+        user.active = true;
+        user.emailVerified = false;
+
+        user.roles = new HashSet<>();
+        user.roles.add(defaultRole);
+
+        return user;
+    }
+
 
 
     // UserDetails 구현
@@ -258,10 +281,6 @@ public static User createSocialUser(
         this.providerId = providerId;
     }
 
-    // 임시 이메일 여부 판단 (카카오 등 이메일 미제공 케이스)
-    public boolean hasTempEmail() {
-        return this.email != null && this.email.endsWith("@social.temp");
-    }
 
     // 역할 추가/삭제 헬퍼
     public void addRole(Role role) {
