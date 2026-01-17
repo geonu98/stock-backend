@@ -1,37 +1,37 @@
-package com.stock.dashboard.backend.service;
+package com.stock.dashboard.backend.market.service;
 
+import com.stock.dashboard.backend.market.client.AlphaVantageClient;
 import com.stock.dashboard.backend.model.vo.MarketSummaryVO;
-
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONObject;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+
+/**
+ * 기존 MarketService 로직을 거의 그대로 가져오되, **“호출은 client로”**만 분리함.
+ */
 
 @Service
 @Slf4j
-public class MarketService {
+@RequiredArgsConstructor
+public class MarketDataService {
 
-    @Value("${ALPHAVANTAGE_API_KEY}")
-    private String apiKey ;
-    private RestTemplate restTemplate = new RestTemplate();
+    private final AlphaVantageClient alphaVantageClient;
 
     public MarketSummaryVO getRealtimePrice(String symbol) {
-
         try {
-            String url = String.format("https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=%s&apikey=%s"
-                    ,symbol,apiKey);
-
-             String response = restTemplate.getForObject(url, String.class);
+            String response = alphaVantageClient.getGlobalQuoteRaw(symbol);
 
             JSONObject root = new JSONObject(response);
 
-            if (!root.has("Global Quote")){
-                log.error("Global Quote 없음");
-                return  null;
+            if (!root.has("Global Quote")) {
+                log.error("Global Quote 없음. symbol={}, response={}", symbol, response);
+                return null;
             }
+
             JSONObject quote = root.getJSONObject("Global Quote");
-            MarketSummaryVO marketSummaryVO = MarketSummaryVO.builder()
+
+            return MarketSummaryVO.builder()
                     .symbol(quote.optString("01. symbol"))
                     .open(quote.optDouble("02. open", 0.0))
                     .high(quote.optDouble("03. high", 0.0))
@@ -40,32 +40,20 @@ public class MarketService {
                     .volume(quote.optLong("06. volume", 0))
                     .previousClose(quote.optDouble("08. previous close", 0.0))
                     .change(quote.optDouble("09. change", 0.0))
-                    .changePercent(parsePercent(
-                            quote.optString("10. change percent")
-                    ))
+                    .changePercent(parsePercent(quote.optString("10. change percent")))
                     .build();
-
-            return marketSummaryVO;
-
 
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-
     }
 
     private double parsePercent(String s) {
-        if (s == null || s.isEmpty()) {
-            return 0.0;
-        }
-
+        if (s == null || s.isEmpty()) return 0.0;
         try {
-            //% 잇음
             return Double.parseDouble(s.replace("%", "").trim());
         } catch (NumberFormatException e) {
-            return 0.0; // 잘못된 형식이어도 기본값 반환
+            return 0.0;
         }
     }
-
-
 }

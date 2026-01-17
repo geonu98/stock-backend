@@ -7,11 +7,14 @@ import com.stock.dashboard.backend.model.payload.response.JwtAuthenticationRespo
 import com.stock.dashboard.backend.service.oauth.SocialLoginService;
 import com.stock.dashboard.backend.service.oauth.dto.ConnectEmailRequest;
 import com.stock.dashboard.backend.service.oauth.dto.SocialUserInfo;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
 import java.util.Map;
 
 @RestController
@@ -20,6 +23,12 @@ import java.util.Map;
 public class OAuthController {
 
     private final SocialLoginService socialLoginService;
+
+    @Value("${kakao.client-id}")
+    private String kakaoClientId;
+
+    @Value("${kakao.logout-redirect-uri}")
+    private String kakaoLogoutRedirectUri;
 
     /**
      * OAuth callback
@@ -74,7 +83,7 @@ public class OAuthController {
     }
 
     /**
-     * 이메일 입력 → 인증 메일 발송
+     * 소셜 로그인 후 이메일 입력 → 인증 메일 발송
      */
     @PostMapping("/connect-email")
     public ResponseEntity<?> connectEmail(
@@ -84,6 +93,41 @@ public class OAuthController {
                 req.connectEmailRequest()
         );
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * 카카오 OAuth 로그아웃 (카카오 세션 종료용 redirect)
+     *
+     * -----------------------------------------------------------------
+     * ✅ 역할
+     * - 우리 서비스 로그아웃과는 별개
+     * - 카카오 OAuth 세션을 명시적으로 종료하고 싶을 때 사용
+     * - 공용 PC / 보안 목적 옵션용
+     *
+     * ✅ 특징
+     * - JWT 인증 불필요 (permitAll)
+     * - 서버는 카카오 logout endpoint로 redirect만 수행
+     * - 실제 AT/RT 폐기는 프론트에서 /api/auth/logout 호출로 선행 처리
+     *
+     * 흐름:
+     * 프론트
+     *   1) POST /api/auth/logout
+     *   2) window.location.href = /api/auth/oauth/kakao/logout
+     *
+     * 카카오
+     *   - 세션 종료
+     *   - logout_redirect_uri 로 복귀
+     * -----------------------------------------------------------------
+     */
+    @GetMapping("/kakao/logout")
+    public void kakaoLogout(HttpServletResponse response) throws IOException {
+
+        String logoutUrl =
+                "https://kauth.kakao.com/oauth/logout" +
+                        "?client_id=" + kakaoClientId +
+                        "&logout_redirect_uri=" + kakaoLogoutRedirectUri;
+
+        response.sendRedirect(logoutUrl);
     }
 
     /* ================= DTO ================= */

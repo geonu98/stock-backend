@@ -38,13 +38,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      * - 로그인/회원가입/토큰재발급/소셜로그인 시작/콜백은 "로그인 전" 요청이므로 JWT 검사하면 안 됨
      */
     private static final List<String> EXCLUDED_PREFIXES = List.of(
-            "/api/auth",          // ✅ /api/auth/login, /api/auth/refresh, /api/auth/oauth/... 전부 포함
+            "/api/auth",          //  /api/auth/login, /api/auth/refresh, /api/auth/oauth/... 전부 포함
             "/swagger",
             "/swagger-ui",
             "/swagger-resources",
             "/v3/api-docs",
             "/api-docs",
-            "/error"
+            "/error",
+            "/api/home",
+            "/api/market"
     );
 
     @Override

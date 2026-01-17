@@ -20,6 +20,7 @@ public class UserProfileResponse {
     private List<String> roles;
     private List<String> interests;
     private LocalDateTime createdAt;
+    private String provider;
 
     public UserProfileResponse(User user) {
         this.id = user.getId();
@@ -36,6 +37,7 @@ public class UserProfileResponse {
                 .toList();
         this.interests = user.getInterestNames();
         this.createdAt = user.getCreatedAt();
+        this.provider = user.getProvider();
 
 }
 

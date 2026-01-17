@@ -72,11 +72,15 @@ public class SecurityConfig {
                                 "/api-docs",
                                 "/",
                                 "/favicon.ico",
-                                "/error"
+                                "/error",
+                                "/api/market/**",
+                                "/api/home"
                         ).permitAll()
                         // 인증 없이 접근 가능한 API
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/auth/oauth/**").permitAll()
+
+
 
                         // 인증 이후 접근 가능한 API
                         .requestMatchers("/api/secure/**").authenticated()
