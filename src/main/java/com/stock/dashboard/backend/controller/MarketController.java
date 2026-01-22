@@ -3,11 +3,14 @@ package com.stock.dashboard.backend.controller;
 import com.stock.dashboard.backend.market.bok.BokExchangeRateService;
 import com.stock.dashboard.backend.market.bok.FxRateResponse;
 import com.stock.dashboard.backend.market.dto.DailyCandleDTO;
+import com.stock.dashboard.backend.market.dto.MarketSummaryResponse;
 import com.stock.dashboard.backend.market.service.MarketCandleService;
 import com.stock.dashboard.backend.market.service.MarketRealtimePriceService;
+import com.stock.dashboard.backend.market.service.MarketSummaryFacadeService;
 import com.stock.dashboard.backend.model.vo.MarketSummaryVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -26,6 +29,7 @@ public class MarketController {
     private final MarketCandleService marketCandleService;
     private final MarketRealtimePriceService marketRealtimePriceService;
     private  final BokExchangeRateService bokExchangeRateService;
+    private final MarketSummaryFacadeService marketSummaryFacadeService;
 
     // 한국은행 Open API 키
     @Value("${bok.api-key}")
@@ -65,5 +69,15 @@ public class MarketController {
     @GetMapping("/fx/usd-krw")
     public FxRateResponse getUsdKrw() {
         return new FxRateResponse("USD", "KRW", bokExchangeRateService.getUsdKrwRate());
+    }
+
+
+
+    @GetMapping("/summary")
+    public ResponseEntity<MarketSummaryResponse> getSummary(
+            @RequestParam String symbol,
+            @RequestParam(defaultValue = "90") int days
+    ) {
+        return ResponseEntity.ok(marketSummaryFacadeService.getSummary(symbol, days));
     }
 }

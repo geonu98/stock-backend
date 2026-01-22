@@ -79,4 +79,21 @@ public class GlobalExceptionHandler {
                         message
                 ));
     }
+
+    @ExceptionHandler(EmailRequiredException.class)
+    public ResponseEntity<EmailRequiredResponse> handleEmailRequired(EmailRequiredException e) {
+        return ResponseEntity
+                .status(409)
+                .body(new EmailRequiredResponse(
+                        "EMAIL_REQUIRED",
+                        e.getProvider(),
+                        e.getProviderId()
+                ));
+    }
+
+    public record EmailRequiredResponse(
+            String code,
+            String provider,
+            String providerId
+    ) {}
 }

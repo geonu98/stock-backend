@@ -1,5 +1,6 @@
 package com.stock.dashboard.backend.service.oauth;
 
+import com.stock.dashboard.backend.exception.EmailRequiredException;
 import com.stock.dashboard.backend.exception.ResourceAlreadyInUseException;
 import com.stock.dashboard.backend.model.EmailVerificationToken;
 import com.stock.dashboard.backend.model.Role;
@@ -157,8 +158,8 @@ public class SocialLoginService {
                 );
             }
 
-            // ✅ 그 외는 EMAIL_REQUIRED로 보내는 게 맞다.
-            throw new IllegalStateException("Email required for social login");
+            //
+            throw new EmailRequiredException(info.provider(), info.providerId());
         }
 
         return processSocialLogin(

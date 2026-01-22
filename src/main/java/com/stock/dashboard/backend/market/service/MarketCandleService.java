@@ -47,7 +47,7 @@ public class MarketCandleService {
                     .high(d.optDouble("2. high"))
                     .low(d.optDouble("3. low"))
                     .close(d.optDouble("4. close"))
-                    .volume(d.optLong("6. volume"))
+                    .volume(d.optLong("5. volume"))
                     .build());
         }
 
