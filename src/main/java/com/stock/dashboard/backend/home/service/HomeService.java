@@ -3,60 +3,118 @@ package com.stock.dashboard.backend.home.service;
 import com.stock.dashboard.backend.home.vo.HomeResponseVO;
 import com.stock.dashboard.backend.home.vo.HomeTickerVO;
 import com.stock.dashboard.backend.home.vo.NewsItemVO;
+import com.stock.dashboard.backend.market.client.FinnhubClient;
+
+
+import com.stock.dashboard.backend.market.dto.FinnhubNewsItemDTO;
+import com.stock.dashboard.backend.market.service.MarketRealtimePriceService;
+import com.stock.dashboard.backend.market.twelvedata.service.SparklineService;
+import com.stock.dashboard.backend.market.twelvedata.dto.SparklinePoint;
+import com.stock.dashboard.backend.model.vo.MarketSummaryVO;
 import lombok.RequiredArgsConstructor;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
-
+import java.util.Objects;
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class HomeService {
 
+    private final MarketRealtimePriceService marketRealtimePriceService;
+    private final SparklineService sparklineService; // TwelveData
+    private final FinnhubClient finnhubClient;
+    private final HomeRecommendationService homeRecommendationService;
+
+
+    @Value("${home.symbols}")
+    private String symbolsCsv;
+
+    @Value("${home.sparkline-days:30}")
+    private int sparklineDays;
+
+    @Value("${home-news.category:general}")
+    private String newsCategory;
+
+    @Value("${home-news.limit:10}")
+    private int newsLimit;
+
     public HomeResponseVO getHome() {
+        List<String> symbols = Arrays.stream(symbolsCsv.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .distinct()
+                .toList();
 
-        // 1) 티커(미니 차트 영역에 들어갈 것) - 일단 더미
-        List<HomeTickerVO> tickers = List.of(
-                HomeTickerVO.builder()
-                        .symbol("AAPL")
-                        .name("애플")
-                        .price(257.64)
-                        .change(-2.29)
-                        .changePercent(-0.88)
-                        .sparkline(List.of(250.0, 252.3, 255.1, 253.7, 257.6))
-                        .build(),
-                HomeTickerVO.builder()
-                        .symbol("MSFT")
-                        .name("마이크로소프트")
-                        .price(457.99)
-                        .change(-1.39)
-                        .changePercent(-0.30)
-                        .sparkline(List.of(450.0, 451.2, 452.8, 456.0, 458.0))
-                        .build()
-        );
+        List<HomeTickerVO> tickers = symbols.stream()
+                .map(this::buildTickerSafe)
+                .filter(Objects::nonNull)
+                .toList();
 
-        // 2) 뉴스 - 일단 더미
-        List<NewsItemVO> news = List.of(
-                NewsItemVO.builder()
-                        .headline("미 연준, 금리 동결 발표")
-                        .source("경제")
-                        .datetime(System.currentTimeMillis())
-                        .url("https://example.com/news/1")
-                        .summary("시장 예상대로 금리 동결이 발표됐습니다.")
-                        .image(null)
-                        .build(),
-                NewsItemVO.builder()
-                        .headline("테크주 강세, 나스닥 상승")
-                        .source("시장")
-                        .datetime(System.currentTimeMillis() - 3600_000)
-                        .url("https://example.com/news/2")
-                        .summary("주요 빅테크가 상승하며 지수도 함께 올랐습니다.")
-                        .image(null)
-                        .build()
-        );
+        List<NewsItemVO> news = buildNewsSafe();
+        // 추천 1페이지 같이 내려주기
+        var recommendations = homeRecommendationService.getRecommendations(0);
 
         return HomeResponseVO.builder()
-                .tickers(tickers)
+                .tickers(tickers)   // 에디터픽
+                .recommendations(recommendations) // 추천
                 .news(news)
                 .build();
     }
+
+    private HomeTickerVO buildTickerSafe(String symbol) {
+        try {
+            // 1️⃣ 실시간 시세 (Finnhub)
+            MarketSummaryVO p = marketRealtimePriceService.getRealtimePrice(symbol);
+
+            // 2️⃣ 스파크라인 (TwelveData)
+            var sparklinePoints = sparklineService.getSparkline(symbol);
+
+            List<Double> sparkline = sparklinePoints.stream()
+                    .map(SparklinePoint::getClose)
+                    .toList();
+
+
+            return HomeTickerVO.builder()
+                    .symbol(symbol)
+                    .name(null)
+                    .price(p.getPrice())
+                    .change(p.getChange())
+                    .changePercent(p.getChangePercent())
+                    .sparkline(sparkline)
+                    .build();
+        } catch (Exception e) {
+            log.warn("Home ticker build failed: symbol={}", symbol, e);
+            return null;
+        }
+    }
+
+    private List<NewsItemVO> buildNewsSafe() {
+        try {
+            List<FinnhubNewsItemDTO> items = finnhubClient.getMarketNews(newsCategory);
+
+            return items.stream()
+                    .sorted(Comparator.comparingLong(FinnhubNewsItemDTO::getDatetime).reversed())
+                    .limit(newsLimit)
+                    .map(n -> NewsItemVO.builder()
+                            .headline(n.getHeadline())
+                            .source(n.getSource())
+                            .datetime(n.getDatetime() * 1000L)
+                            .url(n.getUrl())
+                            .summary(n.getSummary())
+                            .image(n.getImage())
+                            .build())
+                    .toList();
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
 }
+
+
+

@@ -1,27 +1,22 @@
 package com.stock.dashboard.backend.home.vo;
 
-import com.stock.dashboard.backend.model.vo.MarketSummaryVO;
+import com.stock.dashboard.backend.home.dto.RecommendationsResponse;
 import lombok.Builder;
 import lombok.Getter;
-
 import java.util.List;
 
 @Getter
 @Builder
 public class HomeResponseVO {
 
-    // 상단 미니 지수/티커
-    private List<MarketSummaryVO> indices;
+    // 에디터픽 (home.symbols)
+    private List<HomeTickerVO> tickers;
 
-    // 오늘 인기 종목
-    private List<MarketSummaryVO> popularStocks;
+    // 추천 종목 (HomeRecommendationService)
+    private RecommendationsResponse recommendations;
 
     // 뉴스
     private List<NewsItemVO> news;
 
-
-    private List<HomeTickerVO> tickers;
-
-
-     private Double usdKrw;
+    private Double usdKrw;
 }

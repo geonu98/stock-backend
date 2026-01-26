@@ -74,7 +74,7 @@ public class SecurityConfig {
                                 "/favicon.ico",
                                 "/error",
                                 "/api/market/**",
-                                "/api/home"
+                                "/api/home/**"
                         ).permitAll()
                         // 인증 없이 접근 가능한 API
                         .requestMatchers("/api/auth/**").permitAll()
