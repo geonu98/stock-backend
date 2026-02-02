@@ -12,5 +12,6 @@ public class TwelveDataTimeSeriesResponse {
     public static class Value {
         private String datetime;
         private String close;
+        private String volume;
     }
 }

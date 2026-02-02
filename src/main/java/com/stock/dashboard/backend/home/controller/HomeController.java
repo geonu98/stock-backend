@@ -20,8 +20,9 @@ public class HomeController {
 
     @GetMapping("/recommendations")
     public RecommendationsResponse recommendations(@RequestParam(defaultValue = "0") int offset) {
-        return homeRecommendationService.getRecommendations(offset);
+        return homeService.getRecommendationsFromCache(offset);
     }
+
 
     @GetMapping
     public HomeResponseVO getHome() {
