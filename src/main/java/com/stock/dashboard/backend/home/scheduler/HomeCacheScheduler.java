@@ -1,6 +1,7 @@
 package com.stock.dashboard.backend.home.scheduler;
 
 import com.stock.dashboard.backend.home.service.HomeService;
+import com.stock.dashboard.backend.home.service.RecommendationPoolService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,34 +14,34 @@ import org.springframework.stereotype.Component;
 public class HomeCacheScheduler {
 
     private final HomeService homeService;
+    private final RecommendationPoolService poolService;
 
     @PostConstruct
     public void init() {
         try {
-            homeService.refreshHomeCache();
+//            poolService.refreshPool();
+            // homeService.refreshHomeCache();  // 부팅 시에는 막기
             log.info("Home cache refresh (init)");
         } catch (Exception e) {
             log.warn("Home cache refresh failed (init).", e);
         }
     }
 
-    // 정규장 시간대(한국 기준 23:30~06:00): 30분마다
-    // 23:30, 00:00, 00:30, ... , 05:30, 06:00
     @Scheduled(cron = "0 0,30 0-6,23 * * *", zone = "Asia/Seoul")
     public void refreshDuringMarketHours() {
         try {
+//            poolService.refreshPool();
             homeService.refreshHomeCache();
             log.info("Home cache refresh (market hours)");
-
         } catch (Exception e) {
             log.warn("Home cache refresh failed (market hours). Keep last success.", e);
         }
     }
 
-    // 장 닫힌 시간대: 하루 2번(예: 09:00, 15:00)
     @Scheduled(cron = "0 0 9,15 * * *", zone = "Asia/Seoul")
     public void refreshOffHours() {
         try {
+//            poolService.refreshPool();
             homeService.refreshHomeCache();
         } catch (Exception e) {
             log.warn("Home cache refresh failed (off hours). Keep last success.", e);

@@ -6,6 +6,7 @@ import com.stock.dashboard.backend.home.vo.HomeResponseVO;
 import com.stock.dashboard.backend.home.vo.HomeSnapshot;
 import com.stock.dashboard.backend.home.vo.HomeTickerVO;
 import com.stock.dashboard.backend.home.vo.NewsItemVO;
+import com.stock.dashboard.backend.home.vo.RecommendationStatus;
 import com.stock.dashboard.backend.market.client.FinnhubClient;
 import com.stock.dashboard.backend.market.dto.FinnhubNewsItemDTO;
 import com.stock.dashboard.backend.market.service.MarketRealtimePriceService;
@@ -13,10 +14,13 @@ import com.stock.dashboard.backend.market.twelvedata.dto.SparklinePoint;
 import com.stock.dashboard.backend.market.twelvedata.service.SparklineService;
 import com.stock.dashboard.backend.model.vo.MarketSummaryVO;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,8 +34,9 @@ public class HomeService {
     private final MarketRealtimePriceService marketRealtimePriceService;
     private final SparklineService sparklineService;
     private final FinnhubClient finnhubClient;
-    private final HomeRecommendationService homeRecommendationService;
+
     private final HomeCacheStore homeCacheStore;
+    private final RecommendationPoolService recommendationPoolService;
 
     @Value("${home.symbols:AAPL,TSLA,NVDA,AMZN}")
     private String symbolsCsv;
@@ -45,61 +50,75 @@ public class HomeService {
     @Value("${home.recommend.page-size:10}")
     private int pageSize;
 
+    @Value("${home.recommend.home-size:5}")
+    private int homeSize;
+
     // 1) 외부 API 호출은 여기서만 함 (스케줄러가 호출)
     public void refreshHomeCache() {
         HomeSnapshot fresh = buildSnapshot();
         homeCacheStore.set(fresh);
 
-        log.info("Home cache refreshed. snapshotId={}, tickers={}, news={}, recoHome={}",
+        log.info("Home cache refreshed. snapshotId={}, tickers={}, news={}, recoHome={}, recoStatus={}, recoVer={}",
                 fresh.getSnapshotId(),
                 fresh.getTickers() == null ? 0 : fresh.getTickers().size(),
                 fresh.getNews() == null ? 0 : fresh.getNews().size(),
-                fresh.getRecommendationItems() == null ? 0 : fresh.getRecommendationItems().size()
+                fresh.getRecommendationItems() == null ? 0 : fresh.getRecommendationItems().size(),
+                fresh.getRecommendationStatus(),
+                fresh.getRecommendationVersion()
         );
     }
 
-    // 2) /api/home : 캐시 기반 반환 (추천은 홈용 5개만)
+    // 2) /api/home : 캐시 기반 반환 (추천은 홈용 5개)
     public HomeResponseVO getHome() {
         HomeSnapshot snap = getOrBuildSnapshotSafe();
 
-        // 홈 추천은 스냅샷에 "이미 5개만" 들어있다고 가정
+        // 홈/더보기 일치용 version
+        String version = snap.getRecommendationVersion();
+
         RecommendationsResponse recoPage0 = toRecoPage0FromHomeList(snap.getRecommendationItems());
 
         return HomeResponseVO.builder()
                 .tickers(snap.getTickers())
                 .news(snap.getNews())
                 .recommendations(recoPage0)
-                .build();
-    }
 
-    // 3) /api/home/recommendations : 더보기는 요청 시점에 계산(스냅샷 slice 금지)
-    public RecommendationsResponse getRecommendationsFromCache(int offset) {
-        // 더보기는 눌렀을 때만 호출되니까 "실시간 계산/스킵 방식"으로 가도 UX OK
-        return homeRecommendationService.getRecommendations(offset);
+                .recommendationVersion(version)
+                .recommendationStatus(snap.getRecommendationStatus())
+                .recommendationUpdatedAt(snap.getRecommendationUpdatedAt())
+
+                .build();
     }
 
     private HomeSnapshot getOrBuildSnapshotSafe() {
         HomeSnapshot cached = homeCacheStore.get();
         if (cached != null) return cached;
 
-        // 서버 첫 실행 직후 캐시가 비어있을 수 있으니 1회 빌드 시도
         try {
             HomeSnapshot fresh = buildSnapshot();
             homeCacheStore.set(fresh);
             return fresh;
         } catch (Exception e) {
             log.warn("Home cache empty and snapshot build failed. returning empty snapshot.", e);
+
+            long nowMs = System.currentTimeMillis();
+            String version = recommendationPoolService.currentVersion();
+
             return HomeSnapshot.builder()
                     .snapshotId("empty")
                     .generatedAt(Instant.EPOCH)
                     .tickers(List.of())
                     .news(List.of())
                     .recommendationItems(List.of())
+                    .recommendationVersion(version)
+                    .recommendationStatus(RecommendationStatus.BUILDING)
+                    .recommendationUpdatedAt(nowMs)
                     .build();
         }
     }
 
     private HomeSnapshot buildSnapshot() {
+        long nowMs = System.currentTimeMillis();
+
         List<String> symbols = Arrays.stream(symbolsCsv.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isBlank())
@@ -113,15 +132,33 @@ public class HomeService {
 
         List<NewsItemVO> news = buildNewsSafe();
 
-        // 홈은 빠르게 "5개만" 스냅샷에 저장
-        List<RecommendedItemResponse> recoHome = homeRecommendationService.getRecommendationsForHome();
+        // 홈/더보기 일치용 version을 "스냅샷에 고정"한다.
+        String version = recommendationPoolService.currentVersion();
+
+        // 풀에서 version 기준으로 홈 5개 추출
+        List<RecommendedItemResponse> fromPool = recommendationPoolService.getRecommendationsForHome(version);
+        List<RecommendedItemResponse> recoHome = (fromPool == null) ? List.of() : fromPool;
+
+        RecommendationStatus status = (recoHome.size() >= homeSize)
+                ? RecommendationStatus.READY
+                : RecommendationStatus.BUILDING;
+
+        if (status == RecommendationStatus.BUILDING) {
+            // 풀 부족이면 홈 UX 깨지지 않게 고정 심볼로 부족분 채워서 5개 보장
+            recoHome = fillHomeRecommendationsWithFixedSymbols(recoHome, symbols, homeSize);
+        }
 
         return HomeSnapshot.builder()
-                .snapshotId(String.valueOf(System.currentTimeMillis()))
+                .snapshotId(String.valueOf(nowMs))
                 .generatedAt(Instant.now())
                 .tickers(tickers)
                 .news(news)
+
                 .recommendationItems(recoHome)
+                .recommendationVersion(version)
+                .recommendationStatus(status)
+                .recommendationUpdatedAt(nowMs)
+
                 .build();
     }
 
@@ -131,9 +168,7 @@ public class HomeService {
 
         List<RecommendedItemResponse> items = all.subList(0, end);
 
-        // 홈 화면에서도 "더보기" 버튼 보여주고 싶으면 nextOffset을 0이 아니라 end로 주면 됨
-        // 근데 데이터 원천이 5개뿐이라 nextOffset은 UI용 “더보기 있음” 신호로만 쓰는게 맞음
-        // 실제 더보기 API는 getRecommendationsFromCache(offset)에서 실시간으로 계산
+        // 홈은 5개만이니까 nextOffset은 UI 힌트 용도
         Integer nextOffset = end > 0 ? end : null;
 
         return new RecommendationsResponse(items, nextOffset);
@@ -142,7 +177,7 @@ public class HomeService {
     private HomeTickerVO buildTickerSafe(String symbol) {
         try {
             MarketSummaryVO p = marketRealtimePriceService.getRealtimePrice(symbol);
-            var sparklinePoints = sparklineService.getSparkline(symbol);
+            List<SparklinePoint> sparklinePoints = sparklineService.getSparklineOnly(symbol);
             List<Double> sparkline = sparklinePoints.stream().map(SparklinePoint::getClose).toList();
 
             return HomeTickerVO.builder()
@@ -178,5 +213,56 @@ public class HomeService {
         } catch (Exception e) {
             return List.of();
         }
+    }
+
+    /**
+     * 홈 추천 5개 보장용 fallback
+     * - 풀에서 일부만 나왔을 때, home.symbols(고정 심볼)로 부족분을 채운다.
+     * - 이미 있는 심볼은 중복 제거한다.
+     */
+    private List<RecommendedItemResponse> fillHomeRecommendationsWithFixedSymbols(
+            List<RecommendedItemResponse> base,
+            List<String> fixedSymbols,
+            int targetSize
+    ) {
+        List<RecommendedItemResponse> out = new ArrayList<>();
+        if (base != null) out.addAll(base);
+
+        Set<String> used = new HashSet<>();
+        for (RecommendedItemResponse r : out) {
+            if (r != null && r.symbol() != null) {
+                used.add(r.symbol().trim().toUpperCase());
+            }
+        }
+
+        if (fixedSymbols == null || fixedSymbols.isEmpty()) {
+            return out.size() > targetSize ? out.subList(0, targetSize) : out;
+        }
+
+        for (String s : fixedSymbols) {
+            if (out.size() >= targetSize) break;
+            if (s == null || s.isBlank()) continue;
+
+            String sym = s.trim().toUpperCase();
+            if (used.contains(sym)) continue;
+
+            try {
+                MarketSummaryVO quote = marketRealtimePriceService.getRealtimePrice(sym);
+                List<SparklinePoint> sparkline = sparklineService.getSparklineOnly(sym);
+                if (sparkline == null || sparkline.isEmpty()) continue;
+
+                out.add(new RecommendedItemResponse(
+                        sym,
+                        quote.getPrice(),
+                        quote.getChangePercent(),
+                        sparkline
+                ));
+                used.add(sym);
+            } catch (Exception e) {
+                log.debug("fill home reco skip symbol={} ex={}", sym, e.getClass().getSimpleName());
+            }
+        }
+
+        return out.size() > targetSize ? out.subList(0, targetSize) : out;
     }
 }

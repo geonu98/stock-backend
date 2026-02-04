@@ -8,4 +8,6 @@ import lombok.Data;
 public class SparklinePoint {
     private int index;
     private double close;
+
+
 }

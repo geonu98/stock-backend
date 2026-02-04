@@ -19,4 +19,10 @@ public class HomeResponseVO {
     private List<NewsItemVO> news;
 
     private Double usdKrw;
+
+
+    private RecommendationStatus recommendationStatus;
+    private Long recommendationUpdatedAt;
+
+    private String recommendationVersion;
 }

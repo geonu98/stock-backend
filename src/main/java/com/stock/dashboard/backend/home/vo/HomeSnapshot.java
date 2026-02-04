@@ -19,4 +19,9 @@ public class HomeSnapshot {
 
     // 핵심: 추천은 전체를 스냅샷에 저장
     List<RecommendedItemResponse> recommendationItems;
+
+    RecommendationStatus recommendationStatus;
+    Long recommendationUpdatedAt;
+
+    String recommendationVersion;
 }
