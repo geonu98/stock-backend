@@ -1,7 +1,9 @@
 # Step 1: Build stage (Gradle)
 FROM gradle:8.7-jdk17 AS builder
 WORKDIR /app
-COPY ./backend ./
+
+#  repo 전체를 복사 (backend 폴더 가정 제거)
+COPY . .
 RUN gradle clean bootJar --no-daemon
 
 # Step 2: Run stage
