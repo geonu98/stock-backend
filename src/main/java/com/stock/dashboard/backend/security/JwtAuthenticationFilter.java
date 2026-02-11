@@ -34,7 +34,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private String tokenRequestHeaderPrefix;
 
     /**
-     * ✅ JWT 필터를 적용하지 않을 경로 prefix 목록
+     * JWT 필터를 적용하지 않을 경로 prefix 목록
      * - 로그인/회원가입/토큰재발급/소셜로그인 시작/콜백은 "로그인 전" 요청이므로 JWT 검사하면 안 됨
      */
     private static final List<String> EXCLUDED_PREFIXES = List.of(
@@ -46,7 +46,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "/api-docs",
             "/error",
             "/api/home",
-            "/api/market"
+            "/api/market",
+            "/health",
+            "/"
     );
 
     @Override
