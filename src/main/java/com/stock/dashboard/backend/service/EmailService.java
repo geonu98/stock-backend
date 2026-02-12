@@ -1,11 +1,8 @@
 package com.stock.dashboard.backend.service;
 
-import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.util.UriUtils;
@@ -21,8 +18,32 @@ public class EmailService {
      * JavaMailSender
      * - 실제 메일 전송 담당
      * - spring.mail.* 설정을 기반으로 동작
+     *
+     * ✅ (변경) Render 환경에서 Gmail SMTP(587/465) 연결이 막히는 케이스가 발생해서
+     *    현재는 JavaMailSender를 사용하지 않고, Resend API(HTTP)로 전송한다.
+     *    - 메일 "내용/링크 생성 로직"은 그대로 유지
+     *    - "전송 수단"만 Resend로 교체
+     *
+     * ⚠️ 참고
+     * - 기존 JavaMailSender 기반 구현은 SMTP 환경에서만 동작
+     * - Resend는 outbound 포트 제약과 무관하게 안정적으로 동작
      */
-    private final JavaMailSender mailSender;
+    // private final JavaMailSender mailSender;
+
+    /**
+     * ✅ Resend 이메일 전송 클라이언트
+     * - https://api.resend.com/emails 로 HTTP POST
+     * - Render/Vercel 등 PaaS 환경에서 SMTP 포트 차단 이슈 없이 동작
+     *
+     * 필요 환경변수:
+     * - RESEND_API_KEY
+     * - RESEND_FROM  (예: "Stock Dashboard <onboarding@resend.dev>" 또는 도메인 인증 후 커스텀 주소)
+     *
+     * application*.properties:
+     * - resend.api-key=${RESEND_API_KEY}
+     * - resend.from=${RESEND_FROM}
+     */
+    private final ResendEmailClient resendEmailClient;
 
     /**
      * ✅ 백엔드 Base URL
@@ -42,9 +63,13 @@ public class EmailService {
      * 발신자 이메일
      * - 보통 Gmail 계정 / SMTP 계정
      * - spring.mail.username 값을 그대로 사용
+     *
+     * ✅ (변경) Resend로 전환하면서 spring.mail.username 기반 발신자 주소는 사용하지 않는다.
+     *    - Resend의 발신자(from)는 resend.from(${RESEND_FROM})에서 가져온다.
+     *    - 기존 주석/설명은 유지 (이전 SMTP 구조에 대한 문서 역할)
      */
-    @Value("${spring.mail.username}")
-    private String senderEmail;
+    // @Value("${spring.mail.username}")
+    // private String senderEmail;
 
     // ---------------------------------------------------------------------
     // ✅ 통합된 단일 메서드 (로컬 회원가입 / 소셜 EMAIL_REQUIRED 모두 여기만 사용)
@@ -101,61 +126,51 @@ public class EmailService {
         // -----------------------------
         // 네이버 메일 등 일부 클라이언트에서 text/plain 링크가 클릭되지 않는 문제가 있어서
         // HTML 메일로 보내 버튼/링크 클릭이 확실히 되도록 한다.
+
+        // 제목
+        String subject = "[Stock Dashboard] 이메일 인증을 완료해주세요";
+
+        // 본문
+        // - 버튼 클릭 유도
+        // - 만료 시간 안내 (실제 TTL은 서버 설정/DB expiresAt 기준)
+        // - 버튼이 안 되면 링크 복사/붙여넣기 안내
+        String html = """
+                <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+                  <p>아래 버튼을 클릭하여 이메일 인증을 완료해주세요.</p>
+
+                  <p>
+                    <a href="%s"
+                       style="display:inline-block;
+                              padding:10px 16px;
+                              border-radius:10px;
+                              background:#2563eb;
+                              color:#ffffff;
+                              text-decoration:none;">
+                      이메일 인증하기
+                    </a>
+                  </p>
+
+                  <p style="color:#6b7280; font-size:12px;">
+                    버튼이 동작하지 않으면 아래 링크를 복사해서 브라우저에 붙여넣어주세요.
+                  </p>
+
+                  <p style="word-break: break-all; font-size:12px;">
+                    %s
+                  </p>
+
+                  <p style="color:#6b7280; font-size:12px;">
+                    이 링크는 일정 시간이 지나면 만료됩니다.
+                  </p>
+                </div>
+                """.formatted(verifyUrl, verifyUrl);
+
+        // -----------------------------
+        // 4) 메일 전송
+        // -----------------------------
+        // ✅ (변경) JavaMailSender(SMTP) → Resend API(HTTP)로 전송
+        // - Render에서 SMTP 연결 실패(timeout) 문제를 제거하기 위함
         try {
-            MimeMessage mimeMessage = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, "UTF-8");
-
-            // 발신자 표시(메일 클라이언트에 따라 다르게 보일 수 있음)
-            // "Stock Dashboard <sender@gmail.com>" 형태로 보이게 한다.
-            helper.setFrom(String.format("Stock Dashboard <%s>", senderEmail));
-
-            // 수신자
-            helper.setTo(toEmail);
-
-            // 제목
-            helper.setSubject("[Stock Dashboard] 이메일 인증을 완료해주세요");
-
-            // 본문
-            // - 버튼 클릭 유도
-            // - 만료 시간 안내 (실제 TTL은 서버 설정/DB expiresAt 기준)
-            // - 버튼이 안 되면 링크 복사/붙여넣기 안내
-            String html = """
-                    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-                      <p>아래 버튼을 클릭하여 이메일 인증을 완료해주세요.</p>
-
-                      <p>
-                        <a href="%s"
-                           style="display:inline-block;
-                                  padding:10px 16px;
-                                  border-radius:10px;
-                                  background:#2563eb;
-                                  color:#ffffff;
-                                  text-decoration:none;">
-                          이메일 인증하기
-                        </a>
-                      </p>
-
-                      <p style="color:#6b7280; font-size:12px;">
-                        버튼이 동작하지 않으면 아래 링크를 복사해서 브라우저에 붙여넣어주세요.
-                      </p>
-
-                      <p style="word-break: break-all; font-size:12px;">
-                        %s
-                      </p>
-
-                      <p style="color:#6b7280; font-size:12px;">
-                        이 링크는 일정 시간이 지나면 만료됩니다.
-                      </p>
-                    </div>
-                    """.formatted(verifyUrl, verifyUrl);
-
-            helper.setText(html, true);
-
-            // -----------------------------
-            // 4) 메일 전송
-            // -----------------------------
-            mailSender.send(mimeMessage);
-
+            resendEmailClient.sendHtml(toEmail, subject, html);
         } catch (Exception e) {
             // 메일 전송 실패는 가입/연결 플로우에 직접 영향을 주므로 로그를 남기고 예외를 던진다.
             log.error("[EMAIL] verification mail send failed to={}", toEmail, e);
