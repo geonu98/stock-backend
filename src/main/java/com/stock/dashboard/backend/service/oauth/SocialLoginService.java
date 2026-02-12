@@ -84,6 +84,10 @@ public class SocialLoginService {
     @Value("${app.frontend.url}")
     private String frontendUrl;
 
+    @Value("${kakao.redirect-uri}")
+    private String kakaoRedirectUri;
+
+
     /**
      *  소셜 로그인 시작
      *
@@ -100,7 +104,8 @@ public class SocialLoginService {
                 .orElseThrow(() -> new IllegalArgumentException("Unsupported provider: " + provider));
 
         // 현재 구조: 프론트 공통 콜백(/oauth/callback)로 code를 받는 설계
-        String redirectUri = frontendUrl + "/oauth/callback";
+        //변경 카카오 redirect_uri 단일화
+        String redirectUri = kakaoRedirectUri;
 
         return oAuthService.getAuthorizeUrl(redirectUri);
     }
@@ -132,7 +137,7 @@ public class SocialLoginService {
     ) {
         // 소셜 provider가 이메일을 제공하지 않은 경우 -> 프론트에 EMAIL_REQUIRED로 보내는 구조가 필요
         // -----------------------------------------------------------------
-        // ✅ 추가 정책(중요)
+        //  추가 정책(중요)
         // - 카카오는 동의/스코프/계정 설정에 따라 email을 아예 내려주지 않을 수 있다.
         // - 하지만 "이미 DB에 이메일이 연결 + emailVerified=true"인 유저라면,
         //   provider 응답 email이 null이어도 바로 로그인 처리되어야 한다.
@@ -144,7 +149,7 @@ public class SocialLoginService {
             User existing = userRepository.findByProviderAndProviderId(info.provider(), info.providerId())
                     .orElse(null);
 
-            // ✅ DB에 이미 이메일이 연결되어 있고 인증까지 끝났으면 정상 로그인 진행
+            //  DB에 이미 이메일이 연결되어 있고 인증까지 끝났으면 정상 로그인 진행
             if (existing != null
                     && existing.getEmail() != null && !existing.getEmail().isBlank()
                     && Boolean.TRUE.equals(existing.getEmailVerified())) {
@@ -189,13 +194,13 @@ public class SocialLoginService {
      */
     public void connectEmailAndSendVerification(ConnectEmailRequest req) {
 
-        // 0️⃣ 입력 검증
+        //  입력 검증
         if (req.email() == null || req.email().isBlank()) {
             // 400으로 내리고 싶으면 BadRequestException 추천
             throw new IllegalArgumentException("Email required");
         }
 
-        // 1️⃣ provider + providerId로 기존 "임시 소셜 유저" 찾기
+        //  provider + providerId로 기존 "임시 소셜 유저" 찾기
         // - 이미 OAuth callback 단계에서 provider/providerId 기반으로 user row를 만들었거나,
         //   최소한 identify 가능한 상태여야 한다.
         User user = userRepository.findByProviderAndProviderId(
@@ -203,20 +208,20 @@ public class SocialLoginService {
                 req.providerId()
         ).orElseThrow(() -> new IllegalStateException("Social user not found"));
 
-        // 2️⃣ 이메일 중복 체크
+        // 이메일 중복 체크
         // - "이미 다른 사용자에게 연결된 이메일"이면 막는다.
         // - 같은 유저면 통과 (혹시 이미 저장되어 있는 케이스 대비)
         userRepository.findByEmail(req.email())
                 .filter(existing -> !existing.getId().equals(user.getId()))
                 .ifPresent(existing -> {
-                    // ✅ 409 Conflict
+                    //  409 Conflict
                     throw new ResourceAlreadyInUseException("User", "email", req.email());
                 });
 
-        // 3️⃣ raw token 생성 (메일에 들어가는 값)
+        //  raw token 생성 (메일에 들어가는 값)
         String rawToken = verificationTokenCodec.newRawToken();
 
-        // 4️⃣ DB에는 hash만 저장
+        //  DB에는 hash만 저장
         String tokenHash = verificationTokenCodec.sha256Hex(rawToken);
 
         Duration ttl = Duration.ofMinutes(emailVerifyTokenTtlMinutes); // 설정값 권장
@@ -226,7 +231,7 @@ public class SocialLoginService {
 
         emailVerificationTokenRepository.save(token);
 
-        // 5️⃣ 메일에는 raw를 보냄
+        //  메일에는 raw를 보냄
         emailService.sendEmailVerification(req.email(), rawToken);
 
         log.info("[SOCIAL CONNECT-EMAIL] verification mail requested provider={}, providerId={}, email={}",
@@ -234,7 +239,7 @@ public class SocialLoginService {
     }
 
     /**
-     * ✅ 소셜 로그인 핵심 처리 메서드 (공통 로직)
+     *  소셜 로그인 핵심 처리 메서드 (공통 로직)
      *
      * ✔ 사용자 조회 / 생성
      * ✔ 소셜 계정 연결
@@ -252,7 +257,7 @@ public class SocialLoginService {
     ) {
         // 이메일 기준 사용자 조회 or 신규 생성
         // -----------------------------------------------------------------
-        // ✅ 추가 정책(안정성)
+        //  추가 정책(안정성)
         // - 소셜 로그인에서 "진짜 식별자"는 provider+providerId다.
         // - provider 응답 email은 null일 수 있고, 사용자가 이메일을 바꾸는 정책도 있을 수 있다.
         // - 따라서 provider+providerId 우선 조회 → (있다면) 그 유저를 사용하고,
@@ -266,20 +271,20 @@ public class SocialLoginService {
         user.connectSocial(provider, providerId);
 
         // 최신 프로필 정보 동기화
-        // ✅ 정책: 소셜에서 받은 nickname(displayName)을 DB nickname으로 직접 저장/덮어쓰기 하지 않는다.
+        //  정책: 소셜에서 받은 nickname(displayName)을 DB nickname으로 직접 저장/덮어쓰기 하지 않는다.
         // - nickname은 항상 유니크 생성(또는 사용자가 바꾼 값 유지)
         // - 소셜 nickname은 seed로만 사용
         if (info.profileImage() != null && !info.profileImage().isBlank()) {
             user.updateProfileImage(info.profileImage());
         }
 
-        // ✅ 저장 직전 nickname 보정(비어있을 때만 유니크 생성)
+        //  저장 직전 nickname 보정(비어있을 때만 유니크 생성)
         userService.ensureNicknameBeforeSave(user, info.nickname());
 
         try {
             userRepository.save(user);
         } catch (DataIntegrityViolationException e) {
-            // ✅ nickname UNIQUE 충돌(레이스) 대비: seed 기반으로 강제 재생성 후 1회 재시도
+            //  nickname UNIQUE 충돌(레이스) 대비: seed 기반으로 강제 재생성 후 1회 재시도
             userService.forceRegenerateNickname(user, info.nickname());
             userRepository.save(user);
         }
@@ -301,7 +306,7 @@ public class SocialLoginService {
                     Role defaultRole = roleRepository.findByRole(RoleName.ROLE_USER)
                             .orElseThrow(() -> new IllegalStateException("ROLE_USER not found"));
 
-                    // ✅ 정책: 소셜 nickname을 DB nickname에 직접 저장하지 않음 (seed로만 사용)
+                    //  정책: 소셜 nickname을 DB nickname에 직접 저장하지 않음 (seed로만 사용)
                     // - stub도 nickname은 최종적으로 ensureNicknameBeforeSave에서 채워짐
                     return User.createSocialStub(
                             info.provider(),
@@ -313,25 +318,25 @@ public class SocialLoginService {
                 });
 
         // 기존 stub이면 최신 프로필만 동기화
-        // ✅ nickname은 덮어쓰지 않음 (seed로만 사용)
+        //  nickname은 덮어쓰지 않음 (seed로만 사용)
         if (info.profileImage() != null && !info.profileImage().isBlank()) {
             user.updateProfileImage(info.profileImage());
         }
 
-        // ✅ 저장 직전 nickname 보정(비어있을 때만 유니크 생성)
+        //  저장 직전 nickname 보정(비어있을 때만 유니크 생성)
         userService.ensureNicknameBeforeSave(user, info.nickname());
 
         try {
             userRepository.save(user);
         } catch (DataIntegrityViolationException e) {
-            // ✅ nickname UNIQUE 충돌(레이스) 대비: 강제 재생성 후 1회 재시도
+            //  nickname UNIQUE 충돌(레이스) 대비: 강제 재생성 후 1회 재시도
             userService.forceRegenerateNickname(user, info.nickname());
             userRepository.save(user);
         }
     }
 
     /**
-     * ✅ 신규 소셜 사용자 생성
+     *  신규 소셜 사용자 생성
      *
      * - 기본 권한: ROLE_USER
      * - 소셜 전용 사용자 생성 팩토리 메서드 사용
@@ -340,7 +345,7 @@ public class SocialLoginService {
         Role defaultRole = roleRepository.findByRole(RoleName.ROLE_USER)
                 .orElseThrow(() -> new IllegalStateException("ROLE_USER not found"));
 
-        // ✅ 정책: 소셜 nickname을 DB nickname에 직접 저장하지 않음 (seed로만 사용)
+        //  정책: 소셜 nickname을 DB nickname에 직접 저장하지 않음 (seed로만 사용)
         // - 실제 nickname은 processSocialLogin에서 저장 직전 ensureNicknameBeforeSave로 채움
         return userRepository.save(
                 User.createSocialUser(
