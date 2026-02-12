@@ -31,9 +31,13 @@ public class KakaoOAuthService implements SocialOAuthService {
     @Value("${kakao.client-secret}")
     private String clientSecret;
 
-    // ✅ 프론트 주소를 받아서 redirect_uri를 "코드로" 고정 생성
-    @Value("${app.frontend.url}")
-    private String frontendUrl;
+//    // 프론트 주소를 받아서 redirect_uri를 "코드로" 고정 생성
+    //더이상 프론트 주소로 사용안함
+//    @Value("${app.frontend.url}")
+//    private String frontendUrl;
+
+    @Value("${kakao.redirect-uri}")
+    private String kakaoRedirectUri;
 
     private final RestTemplate restTemplate = new RestTemplate();
 
@@ -59,8 +63,8 @@ public class KakaoOAuthService implements SocialOAuthService {
     private String requestAccessToken(String code) {
         String url = "https://kauth.kakao.com/oauth/token";
 
-        // ✅ authorize 때와 "완전히 동일한" redirect_uri를 사용해야 함
-        String redirectUri = frontendUrl + "/oauth/callback";
+        //  authorize 때와 "완전히 동일한" redirect_uri를 사용해야 함
+        String redirectUri = kakaoRedirectUri;
         log.info("[KAKAO] token redirect_uri={}", redirectUri);
 
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
