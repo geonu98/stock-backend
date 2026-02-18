@@ -59,11 +59,13 @@ public class RecommendationPoolService {
      * - TwelveData rate limit 맞으면 즉시 중단하고 nextOffset을 유지(재시도 유도)
      */
     public RecommendationsResponse getRecommendationsFromPool(String version, int offset) {
+
         int start = Math.max(0, offset);
         String v = (version == null || version.isBlank()) ? currentVersion() : version;
 
         // 버전 total
         int total = poolRepository.size(v);
+        log.info("[POOL DEBUG] version={} total={} offset={}", v, total, offset);
 
         // todaySize는 refill 트리거 판단에만 사용
         String today = poolRepository.todayVersion();
