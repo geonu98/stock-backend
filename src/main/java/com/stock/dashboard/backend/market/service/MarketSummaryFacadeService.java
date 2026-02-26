@@ -11,17 +11,16 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class MarketSummaryFacadeService {
 
-    private final MarketRealtimePriceService marketRealtimePriceService; // Finnhub (실시간 quote)
-    private final MarketCandleService marketCandleService;               // AlphaVantage (일봉)
+    private final MarketRealtimePriceService marketRealtimePriceService; // 실시간 quote
+    private final MarketCandleService marketCandleService;              // TwelveData (일봉)
 
     public MarketSummaryResponse getSummary(String symbol, int days) {
         MarketSummaryVO quote = marketRealtimePriceService.getRealtimePrice(symbol);
-        List<DailyCandleDTO> candles = marketCandleService.getDailyCandles(symbol);
 
-        // days만큼만 잘라서 내려주기(선택, 프론트 slice 안 해도 됨)
-        if (days > 0 && candles.size() > days) {
-            candles = candles.subList(candles.size() - days, candles.size());
-        }
+        // ✅ days를 service로 넘겨서
+        // - TwelveData outputsize를 days로 맞추고
+        // - 캐시 키도 symbol:days로 정확히 먹게 함
+        List<DailyCandleDTO> candles = marketCandleService.getDailyCandles(symbol, days);
 
         return MarketSummaryResponse.builder()
                 .quote(quote)

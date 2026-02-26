@@ -1,108 +1,83 @@
 package com.stock.dashboard.backend.market.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.stock.dashboard.backend.market.cache.RedisStringCache;
+import com.stock.dashboard.backend.market.client.TwelveDataTimeSeriesClient;
 import com.stock.dashboard.backend.market.dto.DailyCandleDTO;
+import com.stock.dashboard.backend.market.twelvedata.dto.TwelveDataTimeSeriesResponse;
+import java.time.Duration;
+import java.util.Comparator;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.json.JSONObject;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
-import com.fasterxml.jackson.core.type.TypeReference;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class MarketCandleService {
 
-    @Value("${alphavantage.api-key}")
-    private String apiKey;
+    private final TwelveDataTimeSeriesClient timeSeriesClient;
+    private final RedisStringCache cache;
+    private final ObjectMapper om;
 
-    private final RedisTemplate<String, Object> redisTemplate;
+    private static final String KEY_PREFIX = "market:candles:1day:";
+    private static final Duration TTL = Duration.ofHours(12);
 
-//    private final RestTemplate restTemplate = new RestTemplate();
-    private final RestTemplate restTemplate;
-
-    private static final long CANDLE_TTL_MIN = 60; // 60분 캐시
-    private static final String KEY_PREFIX = "market:candles:";
-
-    private final ObjectMapper om = new ObjectMapper();
-
-    private String key(String symbol) {
-        return KEY_PREFIX + symbol.toUpperCase();
+    private String key(String symbol, int days) {
+        return KEY_PREFIX + symbol.toUpperCase() + ":" + days;
     }
 
-    public List<DailyCandleDTO> getDailyCandles(String symbol) {
+    // ✅ 안전 파싱(값 비었거나 "null"일 때 500 방지)
+    private double d(String s) {
+        if (s == null || s.isBlank() || "null".equalsIgnoreCase(s)) return 0d;
+        try { return Double.parseDouble(s); } catch (Exception e) { return 0d; }
+    }
 
-        //   Redis 캐시 조회 (JSON String)
-        Object cached = redisTemplate.opsForValue().get(key(symbol));
-        if (cached instanceof String cachedJson && !cachedJson.isBlank()) {
+    private long l(String s) {
+        if (s == null || s.isBlank() || "null".equalsIgnoreCase(s)) return 0L;
+        try { return Long.parseLong(s); } catch (Exception e) { return 0L; }
+    }
+
+    public List<DailyCandleDTO> getDailyCandles(String symbol, int days) {
+        days = Math.max(1, Math.min(days, 365));
+        String k = key(symbol, days);
+
+        // ✅ cache HIT
+        String cached = cache.get(k);
+        if (cached != null && !cached.isBlank()) {
             try {
-                return om.readValue(
-                        cachedJson,
-                        new TypeReference<List<DailyCandleDTO>>() {}
-                );
+                return om.readValue(cached, new TypeReference<List<DailyCandleDTO>>() {});
             } catch (Exception e) {
-                // 캐시 포맷이 꼬였으면 지우고 새로 채움
-                redisTemplate.delete(key(symbol));
+                cache.delete(k);
             }
         }
 
-        //   캐시 MISS → AlphaVantage 호출
-        String url = String.format(
-                "https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=%s&apikey=%s",
-                symbol.toUpperCase(), apiKey
-        );
-
-        String response = restTemplate.getForObject(url, String.class);
-        JSONObject root = new JSONObject(response);
-
-        if (!root.has("Time Series (Daily)")) {
-            log.error("일봉 데이터 없음: {}", response);
-
-            //  기존 캐시라도 다시 시도
-            Object fallback = redisTemplate.opsForValue().get(key(symbol));
-            if (fallback instanceof String cachedJson && !cachedJson.isBlank()) {
-                try {
-                    return om.readValue(
-                            cachedJson,
-                            new TypeReference<List<DailyCandleDTO>>() {}
-                    );
-                } catch (Exception ignore) {}
-            }
-
+        // ✅ TwelveData 호출
+        TwelveDataTimeSeriesResponse resp = timeSeriesClient.fetchDailyCandles(symbol, days);
+        if (resp == null || resp.getValues() == null || resp.getValues().isEmpty()) {
             return List.of();
         }
-        JSONObject timeSeries = root.getJSONObject("Time Series (Daily)");
-        List<DailyCandleDTO> candles = new ArrayList<>();
 
-        for (String date : timeSeries.keySet()) {
-            JSONObject d = timeSeries.getJSONObject(date);
+        // ✅ 날짜 오름차순 정렬 + 안전 파싱 적용
+        List<DailyCandleDTO> candles = resp.getValues().stream()
+                .map(v -> DailyCandleDTO.builder()
+                        .date(v.getDatetime()) // 보통 "YYYY-MM-DD"
+                        .open(d(v.getOpen()))
+                        .high(d(v.getHigh()))
+                        .low(d(v.getLow()))
+                        .close(d(v.getClose()))
+                        .volume(l(v.getVolume()))
+                        .build())
+                .sorted(Comparator.comparing(DailyCandleDTO::getDate))
+                .toList();
 
-            candles.add(DailyCandleDTO.builder()
-                    .date(date)
-                    .open(d.optDouble("1. open"))
-                    .high(d.optDouble("2. high"))
-                    .low(d.optDouble("3. low"))
-                    .close(d.optDouble("4. close"))
-                    .volume(d.optLong("5. volume"))
-                    .build());
-        }
-
-        // 최신 → 과거 순이라서 차트용으로 정렬
-        candles.sort((a, b) -> a.getDate().compareTo(b.getDate()));
-
-        //   Redis 저장 (JSON String)
+        // ✅ cache SET
         try {
-            String json = om.writeValueAsString(candles);
-            redisTemplate.opsForValue().set(key(symbol), json, CANDLE_TTL_MIN, TimeUnit.MINUTES);
+            cache.set(k, om.writeValueAsString(candles), TTL);
         } catch (Exception ignore) {}
 
         return candles;
     }
 }
-

@@ -155,4 +155,20 @@ public class TwelveDataTimeSeriesClient {
         if (s == null) return null;
         return new String(s.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
     }
+
+
+    public TwelveDataTimeSeriesResponse fetchDailyCandles(String symbol, int days) {
+        URI uri = UriComponentsBuilder
+                .fromHttpUrl(baseUrl)
+                .path("/time_series")
+                .queryParam("symbol", symbol)
+                .queryParam("interval", "1day")
+                .queryParam("outputsize", days)
+                .queryParam("format", "JSON")
+                .queryParam("apikey", apiKey)
+                .build(true)
+                .toUri();
+
+        return fetchAsDto("fetchDailyCandles", symbol, uri);
+    }
 }

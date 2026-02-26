@@ -51,9 +51,10 @@ public class MarketController {
      */
     @GetMapping("/candles/daily")
     public List<DailyCandleDTO> getDailyCandles(
-            @RequestParam String symbol
+            @RequestParam String symbol,
+            @RequestParam(defaultValue = "90") int days
     ) {
-        return marketCandleService.getDailyCandles(symbol);
+        return marketCandleService.getDailyCandles(symbol, days);
     }
 
     /**
@@ -80,4 +81,6 @@ public class MarketController {
     ) {
         return ResponseEntity.ok(marketSummaryFacadeService.getSummary(symbol, days));
     }
+
+
 }
