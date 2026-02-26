@@ -32,7 +32,8 @@ dependencies {
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 
-    runtimeOnly 'mysql:mysql-connector-java:8.0.33'
+    runtimeOnly 'com.mysql:mysql-connector-j'
+    testRuntimeOnly 'com.mysql:mysql-connector-j'   // ← 테스트 안정용
     runtimeOnly 'org.postgresql:postgresql'
 
 
@@ -40,6 +41,7 @@ dependencies {
     testImplementation 'org.springframework.security:spring-security-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
+    testImplementation 'com.h2database:h2'
 
     // Swagger (Springdoc OpenAPI 3)
     implementation "org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.9"
