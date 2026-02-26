@@ -119,7 +119,7 @@ public class UserService {
         // - TTL(기본 15분)을 적용해 expiresAt이 설정된다.
         EmailVerificationToken tokenEntity =
                 EmailVerificationToken.create(
-                        savedUser.getId(),
+                        savedUser,
                         savedUser.getEmail(),
                         tokenHash,
                         Duration.ofMinutes(verifyTokenTtlMinutes)

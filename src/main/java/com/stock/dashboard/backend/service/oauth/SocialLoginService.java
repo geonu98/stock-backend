@@ -227,7 +227,7 @@ public class SocialLoginService {
         Duration ttl = Duration.ofMinutes(emailVerifyTokenTtlMinutes); // 설정값 권장
 
         EmailVerificationToken token =
-                EmailVerificationToken.create(user.getId(), req.email(), tokenHash, ttl);
+                EmailVerificationToken.create(user, req.email(), tokenHash, ttl);
 
         emailVerificationTokenRepository.save(token);
 

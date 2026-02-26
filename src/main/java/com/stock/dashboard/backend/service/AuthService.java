@@ -280,7 +280,7 @@ public class AuthService {
         // - expiresAt = now + TTL(기본 15분)
         EmailVerificationToken tokenEntity =
                 EmailVerificationToken.create(
-                        user.getId(),
+                       user,
                         user.getEmail(),
                         tokenHash,
                         Duration.ofMinutes(verifyTokenTtlMinutes)

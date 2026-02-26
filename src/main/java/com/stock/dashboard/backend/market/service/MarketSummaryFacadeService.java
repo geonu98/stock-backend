@@ -17,9 +17,9 @@ public class MarketSummaryFacadeService {
     public MarketSummaryResponse getSummary(String symbol, int days) {
         MarketSummaryVO quote = marketRealtimePriceService.getRealtimePrice(symbol);
 
-        // ✅ days를 service로 넘겨서
-        // - TwelveData outputsize를 days로 맞추고
-        // - 캐시 키도 symbol:days로 정확히 먹게 함
+        // ✅ days는 "응답 slice용"
+        // - CandleService는 내부적으로 MAX_DAYS를 1번만 호출/캐시
+        // - 여기서는 days만큼 잘린 candles를 받는다
         List<DailyCandleDTO> candles = marketCandleService.getDailyCandles(symbol, days);
 
         return MarketSummaryResponse.builder()

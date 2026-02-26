@@ -23,47 +23,42 @@ public class MarketCandleService {
     private final ObjectMapper om;
 
     private static final String KEY_PREFIX = "market:candles:1day:";
+
+    // ✅ 외부 호출은 딱 이 만큼만(7/30/90 버튼용이면 90 추천)
+    private static final int MAX_DAYS = 90;
+
+    // ✅ 캐시는 넉넉히 (원하는대로 조절)
     private static final Duration TTL = Duration.ofHours(12);
 
-    private String key(String symbol, int days) {
-        return KEY_PREFIX + symbol.toUpperCase() + ":" + days;
-    }
-
-    // ✅ 안전 파싱(값 비었거나 "null"일 때 500 방지)
-    private double d(String s) {
-        if (s == null || s.isBlank() || "null".equalsIgnoreCase(s)) return 0d;
-        try { return Double.parseDouble(s); } catch (Exception e) { return 0d; }
-    }
-
-    private long l(String s) {
-        if (s == null || s.isBlank() || "null".equalsIgnoreCase(s)) return 0L;
-        try { return Long.parseLong(s); } catch (Exception e) { return 0L; }
+    private String key(String symbol) {
+        return KEY_PREFIX + symbol.toUpperCase(); // ✅ days 제거
     }
 
     public List<DailyCandleDTO> getDailyCandles(String symbol, int days) {
-        days = Math.max(1, Math.min(days, 365));
-        String k = key(symbol, days);
+        days = clamp(days, 1, MAX_DAYS);
+        String k = key(symbol);
 
-        // ✅ cache HIT
+        // ✅ 1) 캐시 HIT: 전체(MAX_DAYS) 데이터 로드 후 slice
         String cached = cache.get(k);
         if (cached != null && !cached.isBlank()) {
             try {
-                return om.readValue(cached, new TypeReference<List<DailyCandleDTO>>() {});
+                List<DailyCandleDTO> all = om.readValue(cached, new TypeReference<List<DailyCandleDTO>>() {});
+                return sliceTail(all, days);
             } catch (Exception e) {
-                cache.delete(k);
+                cache.delete(k); // 캐시 포맷 꼬이면 삭제 후 재조회
             }
         }
 
-        // ✅ TwelveData 호출
-        TwelveDataTimeSeriesResponse resp = timeSeriesClient.fetchDailyCandles(symbol, days);
+        // ✅ 2) 캐시 MISS: TwelveData를 MAX_DAYS로 "한 번만" 호출
+        TwelveDataTimeSeriesResponse resp = timeSeriesClient.fetchDailyCandles(symbol, MAX_DAYS);
         if (resp == null || resp.getValues() == null || resp.getValues().isEmpty()) {
             return List.of();
         }
 
-        // ✅ 날짜 오름차순 정렬 + 안전 파싱 적용
-        List<DailyCandleDTO> candles = resp.getValues().stream()
+        // TwelveData values: 최신→과거로 오는 경우가 많음 → date 오름차순 정렬
+        List<DailyCandleDTO> all = resp.getValues().stream()
                 .map(v -> DailyCandleDTO.builder()
-                        .date(v.getDatetime()) // 보통 "YYYY-MM-DD"
+                        .date(v.getDatetime())
                         .open(d(v.getOpen()))
                         .high(d(v.getHigh()))
                         .low(d(v.getLow()))
@@ -73,11 +68,34 @@ public class MarketCandleService {
                 .sorted(Comparator.comparing(DailyCandleDTO::getDate))
                 .toList();
 
-        // ✅ cache SET
+        // ✅ 3) 캐시에 MAX_DAYS 전체를 저장
         try {
-            cache.set(k, om.writeValueAsString(candles), TTL);
+            cache.set(k, om.writeValueAsString(all), TTL);
         } catch (Exception ignore) {}
 
-        return candles;
+        // ✅ 4) 요청 days만큼만 잘라서 반환
+        return sliceTail(all, days);
+    }
+
+    private List<DailyCandleDTO> sliceTail(List<DailyCandleDTO> all, int days) {
+        if (all == null || all.isEmpty()) return List.of();
+        if (days <= 0) return all;
+        int size = all.size();
+        if (size <= days) return all;
+        return all.subList(size - days, size);
+    }
+
+    private int clamp(int v, int min, int max) {
+        return Math.max(min, Math.min(max, v));
+    }
+
+    private double d(String s) {
+        if (s == null || s.isBlank() || "null".equalsIgnoreCase(s)) return 0d;
+        try { return Double.parseDouble(s); } catch (Exception e) { return 0d; }
+    }
+
+    private long l(String s) {
+        if (s == null || s.isBlank() || "null".equalsIgnoreCase(s)) return 0L;
+        try { return Long.parseLong(s); } catch (Exception e) { return 0L; }
     }
 }
