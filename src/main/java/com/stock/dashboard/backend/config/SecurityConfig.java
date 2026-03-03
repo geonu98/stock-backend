@@ -148,6 +148,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/auth/oauth/**").permitAll()
                         .requestMatchers("/", "/health").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
 
                         // 인증 이후 접근 가능한 API
                         .requestMatchers("/api/secure/**").authenticated()
