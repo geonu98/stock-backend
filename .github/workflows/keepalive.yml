@@ -10,4 +10,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Render
-        run: curl -s https://stock-backend-4l1z.onrender.com/actuator/health
+        run: curl -s https://stock-backend-4l1z.onrender.com/health
