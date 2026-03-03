@@ -47,7 +47,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "/error",
             "/api/home",
             "/api/market",
-            "/health"
+            "/health",
+            "/actuator"
     );
 
     @Override
